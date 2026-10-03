@@ -1,0 +1,17 @@
+# cross_tokenizer run config — Phase 5. ULD-style loss, OFF by default.
+mode: text_sft
+model: student_base
+lora: configs/lora.yaml
+seed: 7
+cross_tokenizer:
+  enabled: false
+  temperature: 2.0
+data:
+  teacher_cache: data/teacher_cache/<teacher_id>/<revision>/
+  replay_ratio: 0.2
+  persona_ratio: 0.2
+train:
+  max_steps: 1000
+  max_seq_len: 2048
+output_dir: runs/cross_tok_v1
+resume_from: null

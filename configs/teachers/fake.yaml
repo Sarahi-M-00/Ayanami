@@ -1,0 +1,16 @@
+# Example teacher entry (fake, test-only). One YAML per real teacher.
+# A real entry pins: id, revision (commit SHA), backend, tokenizer
+# fingerprint (from Phase 1 audit), license and the ToS answer.
+id: fake-qwen3-test
+revision: fixture-v1
+backend: precomputed
+tokenizer_id: student_base
+tokenizer_fingerprint: 563a701b87f87d8076a6faf47ea67cc1292b2321e25f18d09e2d11b6189140aa
+license: test-fixture
+tos_allows_distillation: true
+capabilities:
+  text: true
+  logprobs_topk: true
+  full_logits: false
+  hidden_states: false
+fixture: tests/fixtures/fake_teacher.jsonl

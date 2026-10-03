@@ -1,0 +1,11 @@
+# hidden_kd run config — Phase 5. Projector loss, OFF by default.
+mode: text_sft
+model: student_base
+lora: configs/lora.yaml
+seed: 7
+hidden_kd:
+  enabled: false
+  kind: mse
+  layer_pairs: []
+output_dir: runs/hidden_kd_v1
+resume_from: null

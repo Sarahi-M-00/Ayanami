@@ -1,0 +1,23 @@
+# LoRA defaults — Phase 5. Target names VERIFIED against the snapshot
+# (self_attn.q/k/v/o_proj + mlp.gate/up/down_proj in every layer).
+# q_norm/k_norm are norms, not LoRA targets.
+r: 32
+alpha: 64
+dropout: 0.05
+target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+  - gate_proj
+  - up_proj
+  - down_proj
+lr: 0.0002
+schedule: cosine
+warmup_ratio: 0.03
+gradient_checkpointing: true
+max_seq_len: 2048
+batch_size: 1
+grad_accum: 16
+seed: 7
+optimizer: adamw

@@ -1,0 +1,107 @@
+# Decisions log
+# Format per entry: date, decision, alternatives considered, reason.
+# All entries in English (project rule).
+
+## 2026-10-03 — Workspace location: /home/ling/ayanami-distill/
+Decision: Create the distillation workspace as a new directory `/home/ling/ayanami-distill/` with the target tree from the execution prompt.
+Alternatives:
+- Inside `/home/ling/Ayanami-AI/` (the model snapshot dir). Rejected: the snapshot must stay pristine and read-only; mixing workspace files into it risks accidental modification.
+- Another path. No benefit; home directory keeps ownership and the 151G free disk.
+Reason: Isolation rule (workspace is a separate project with its own venv; the Ayanami-AI CLI and the model snapshot stay untouched).
+
+## 2026-10-03 — Compute branch: cpu_only (training deferred to remote_gpu)
+Decision: The laptop operates on the `cpu_only` branch: data preparation, validation, GGUF conversion and llama.cpp inference. No training on this machine.
+Alternatives:
+- `local_gpu`. Rejected: no NVIDIA GPU, no ROCm stack; only an AMD Cezanne iGPU, unusable by PyTorch. Phase 0 proves no usable GPU (see `docs/ENV_INVENTORY.md`).
+- `remote_gpu` now. Deferred, not rejected: real LoRA/QLoRA training requires Colab/Kaggle/cloud access, which Ling has not provided yet. The repo must be runnable there via one setup script (Phase 2 deliverable `scripts/setup_remote.sh`).
+Reason: 14.9 GiB RAM, 6 CPU cores without AVX-512/AMX, and no accelerator make even LoRA training of a 1.7B model impractical here (optimizer states plus activations exceed comfortable RAM; CPU step throughput would stretch runs to days). The prompt's own plan assigns training to a GPU and the laptop to prep/validation/export.
+Precision rule note: when `remote_gpu` activates, GPUs without native bf16 (e.g. T4) use fp16, Ampere or newer use bf16.
+
+## 2026-10-03 — student_base as physical read-only copy (Ling chose option 1)
+Decision: Copy `/home/ling/Ayanami-AI/` verbatim into `student_base/`, verify SHA256 of the copy, then `chmod -R a-w`. No re-download from HuggingFace.
+Alternatives:
+- Re-run `snapshot_download` into `student_base/`. Rejected: wastes a 3.4 GB download; local file set already matches the upstream sibling list exactly (verified via HF API, revision 433869992df66cd5ed9fa77491809448c3dac7a0).
+- Symlink to `/home/ling/Ayanami-AI/`. Rejected by Ling (option 2): read-only cannot be enforced on a symlink without touching the original.
+Reason: Literal compliance with "snapshot lives in student_base/ and is read-only"; true permission-level protection; 151G free disk makes the 3.4 GB duplication irrelevant.
+
+## 2026-10-03 — Phase 1 audit ran on existing ~/venv-hf-cpu (no new env yet)
+Decision: Run `scripts/audit_student.py` and `scripts/smoke_baseline.py` with the pre-existing `/home/ling/venv-hf-cpu` (torch 2.14.1+cpu, transformers 5.18.0), read-only usage, offline mode. No packages installed or modified.
+Alternatives:
+- Build the project venv in Phase 1. Rejected: the execution prompt assigns environment construction to Phase 2; duplicating it early would split the pinning across two places.
+Reason: Phase 2 will create the pinned `.venv` + `requirements.lock` + `check_env.py`; Phase 1 only needed a throwaway inference runtime, and reusing an existing one keeps the dependency footprint minimal.
+
+## 2026-10-03 — Baseline-0 protocol: greedy, thinking off, 64 new tokens, 6 threads, seed 7
+Decision: `runs/baseline0/` uses greedy decoding (`do_sample=False`), `enable_thinking=False`, `max_new_tokens=64`, 6 CPU threads, seed 7, 10 EN + 10 ES short prompts.
+Alternatives:
+- Sampled decoding with the card defaults (temp 0.6, top_k 20, top_p 0.95). Rejected for the baseline: sampling is non-deterministic across runs and complicates regression diffs; sampled behavior can be added as a second baseline later.
+Reason: A regression reference must be maximally reproducible; greedy + fixed seed gives bit-stable comparisons for future student checkpoints.
+
+## 2026-10-03 — Project Python 3.12 via uv standalone build (system stays 3.14)
+Decision: Install `uv` 0.12.22 as a user-local binary (`~/.local/bin`, outside the repo) and provision CPython 3.12.15 from uv's standalone builds; project `.venv` created with it. System `/usr/bin/python3` (3.14.7) untouched.
+Alternatives:
+- Use system Python 3.14. Rejected: the execution prompt requires 3.10–3.12; torch/transformers on 3.14 is untested territory for this pipeline.
+- pacman/AUR Python 3.12. Rejected: Arch repos ship only the current Python; no root changes wanted.
+Reason: Zero system modification, exact prompt compliance (3.12 in the 3.10–3.12 band).
+
+## 2026-10-03 — CPU torch from the PyTorch CPU index; one lock, remote swaps torch
+Decision: `torch==2.14.1+cpu` installed from `https://download.pytorch.org/whl/cpu` (cp312 wheel verified present before install); everything else unpinned from PyPI and resolved at install time (`transformers>=4.51` floor only), then frozen to 99-line `requirements.lock`. `scripts/setup_remote.sh` installs GPU torch from default PyPI first, then the lock minus torch/nvidia/triton lines.
+Alternatives:
+- Default-PyPI torch (CUDA build) on the laptop. Rejected: pulls ~GBs of useless NVIDIA libs on a GPU-less machine.
+- Separate remote lock file. Rejected for now: one lock + documented swap keeps a single source of pinned truth; revisit if divergence causes pain.
+Reason: Minimal download, reproducible laptop env, runnable remote path.
+
+## 2026-10-03 — bitsandbytes omitted; lm-eval and optuna included
+Decision: Skip `bitsandbytes` (CUDA-only, prompt marks it optional/CUDA-only). Install `lm-eval==0.4.13` and `optuna==5.0.0` since both resolved cleanly.
+Reason: Prompt compliance + no dead weight on CPU-only hardware.
+
+## 2026-10-03 — llama.cpp already present system-wide, no build needed
+Decision: Use system llama.cpp (`/usr/bin/llama-cli`, `llama-server`, `llama-quantize`), version 0.5.0-dev build 11146 commit 7fe450e193. No clone/build performed.
+Reason: Phase 2 only requires install-or-confirm; confirmed present with a recorded commit.
+
+## 2026-10-03 — Full-model backward takes ~130s on CPU (supports cpu_only)
+Decision: Recorded, no action. `check_env.py` 1-step full backward (310 tensors, tiny batch) took 129.8s on 6 CPU threads. A real LoRA run needs thousands of such steps -> days on this laptop.
+Reason: Empirical confirmation of the Phase 0 `cpu_only` branch; training waits for `remote_gpu`.
+
+## 2026-10-03 — system_prompt.md = Appendix A verbatim except one typo fix
+Decision: Copy the Appendix A draft exactly, fixing only "maded by Ling" -> "made by Ling".
+Alternatives: Keep the typo. Rejected: it would be baked into future training data and eval runs.
+Reason: "Refine, but keep the contract" — a typo fix is a refinement, not a contract change.
+
+## 2026-10-03 — Baseline-0 persona run WITHOUT system prompt; Layer-1 run deferred
+Decision: `persona/eval/baseline0_*` scores the untouched Student with no system prompt (greedy, thinking off, 120 max tokens, seed 7). The with-prompt / without-prompt mix from the two-layer strategy will be exercised in later phases, not here.
+Reason: Phase 3 acceptance only requires baseline-0 for the untouched Student; the mix matters once training data is generated (Phase 5).
+
+## 2026-10-03 — Rule-based persona checks are signals, not grades
+Decision: `persona_eval.py` auto-checks are strict by design; every fail means "needs review", and 23/72 cases are manual-review by Ling. Known strictness: markdown bolding breaks `^Summary:` (obedience_11 got `**Summary:**`), letter-spelling breaks exact match (obedience_09 got `D-O-N-E`).
+Alternatives: Loosen checks (strip markdown, normalize spelling). Rejected for the baseline: strict checks give a cleaner regression signal later; loosening can be proposed with evidence in Phase 7.
+Reason: A baseline should be reproducible and strict; interpretation happens at review time.
+
+## 2026-10-03 — No real teacher evaluated; license/ToS gate enforced in code
+Decision: Phase 4 ships the gate (`assert_usable`: empty license or `tos_allows_distillation=false` raises `TeacherBlockedError`, checked before routing) plus a test-only fake teacher (`test-fixture` license). No real teacher has been proposed, approved, or cached.
+Reason: The execution prompt forbids using outputs from providers whose terms prohibit training other models; the first real teacher choice is Ling's decision (Phase 9 open questions). The mechanism is tested; the policy call is deferred.
+
+## 2026-10-03 — Identity scrubber rewrites (not deletes) identity claims
+Decision: `scrub_completion()` substitutes `I am <Teacher>` -> `I am Ayanami` and `<verb> by <Vendor>` -> `<verb> by Ling`, anchored to identity contexts so code/prose (e.g. `llama-quantize`) passes through untouched. Every substitution is reported in `hits`.
+Alternatives: Delete whole sentences containing teacher names. Rejected: it would also delete adjacent useful content and is harder to audit than a reported substitution list.
+Reason: Predictable, reviewable, and it can never inject a *new* vendor claim — only Ayanami/Ling, which is the target identity.
+
+## 2026-10-03 — Cache stores top-k only with a pre-run disk estimate
+Decision: `estimate_topk_cache()` (int32 ids + float16 logprobs + float16 tail per position) must be printed before any caching run; layout `data/teacher_cache/<teacher_id>/<revision>/`.
+Reason: Full-logit caches for long runs would silently fill disks; the estimate makes cost explicit.
+
+## 2026-10-03 — trl 1.14.1 has no cross-tokenizer trainer; own ULD loss written
+Decision: VERIFIED against the installed version (`trl.trainer` modules listed, `DistillationConfig` fields inspected): trl ships `DistillationTrainer` (same-tokenizer, teacher-resident) but no GKD/GOLD-style cross-vocabulary trainer. Wrote `losses/cross_tokenizer.py` (sorted-distribution ULD approximation) behind the `enabled: false` flag instead of reusing trl.
+Reason: Prompt rule — check the installed trl for a ready implementation before writing your own. None exists.
+
+## 2026-10-03 — KD tail tempering is an acknowledged approximation
+Decision: `teacher_topk_dist()` scales cached top-k logprobs by 1/T but keeps the stored tail mass temperature-independent (the tail has no logits to scale without the full distribution). Documented in the module docstring. Verified exact: at T=1 with teacher built from student, loss is ~0 (1.6e-9); at T=2 the same/contrastive ordering holds for forward/reverse/JSD.
+Reason: Standard practical approach for top-k caches; hiding the approximation would be dishonest.
+
+## 2026-10-03 — Smoke verdict: mechanics PASS, memorization needs epochs
+Decision: The 50-example/12-step smoke run is recorded as pipeline PASS on mechanics (72% loss drop, adapter save/load roundtrip, 3/3 outputs changed) but target-hits only 1/3: 12 steps x batch 1 sees ~12/50 examples, which cannot memorize 50 facts. A focused 6-fact run (SMOKE_FOCUS=1, 24 steps = 4 epochs) is the memorization proof; its report decides the final acceptance wording.
+Alternatives: Call 1/3 a pipeline failure. Rejected: evidence (loss curve, changed outputs, deterministic rerun identical to attempt 2) shows gradients and I/O work; the miss is a sample-count artifact.
+Reason: Distinguish "pipeline broken" from "undertrained" — the acceptance criterion is about the pipeline.
+
+## 2026-10-03 — Laptop stuck in powersave (~1.4 GHz); no sudo to change it
+Decision: Recorded, no action possible (no passwordless sudo; will not ask for/share passwords in chat). All CPU timings in this project carry that handicap. Smoke uses 12 SMT threads, batch 1, no grad-checkpointing (RAM allows) for step economy.
+Reason: Environmental fact affecting every timing claim.

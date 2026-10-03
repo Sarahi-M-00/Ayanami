@@ -1,0 +1,22 @@
+# text_sft run config — Phase 5. Response-based distillation (no teacher logits).
+mode: text_sft
+model: student_base
+lora: configs/lora.yaml
+seed: 7
+data:
+  teacher_data: data/processed/teacher_sft.jsonl
+  persona_data: null
+  replay_data: data/processed/replay_general.jsonl
+  replay_ratio: 0.2
+  persona_ratio: 0.2
+  max_train_examples: null
+eval:
+  heldout_general: data/processed/heldout_general.jsonl
+  track_drift: true
+  eval_every_steps: 100
+train:
+  max_steps: 1000
+  checkpoint_every_steps: 200
+  max_seq_len: 2048
+output_dir: runs/text_sft_v1
+resume_from: null

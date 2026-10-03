@@ -1,0 +1,29 @@
+# Student pin — Phase 1. Everything needed to identify this exact snapshot.
+repo_id: orlandorubino/Qwen3-1.7B-heretic
+upstream_sha: "433869992df66cd5ed9fa77491809448c3dac7a0"
+upstream_last_modified: "2026-09-29T01:53:07.000Z"
+# No re-download: local files in /home/ling/Ayanami-AI/ were copied verbatim
+# into student_base/ (Ling's choice, 2026-10-03). Upstream file set matches
+# local file set exactly (8 files, see DECISIONS.md).
+local_source: /home/ling/Ayanami-AI/
+snapshot_dir: student_base
+snapshot_readonly: true
+files_sha256:
+  chat_template.jinja: a55ee1b1660128b7098723e0abcd92caa0788061051c62d51cbe87d9cf1974d8
+  config.json: db21e5529322523f48341a67b677e772ab7818e06226e145e8cec40b22197269
+  generation_config.json: 893b0dccf83626cdfdc498e5b2a255a935b4c3c693350aed18f7003c1a3f3de9
+  model.safetensors: e4600a43e0655ee8af35d30af78538f47c97b2936951cdb0d00fc9c1f9389737
+  README.md: 943f58b22cbb80d0f7f77f441f398475bf11150b5bc2655959c28be4a523b72f
+  tokenizer_config.json: 04b1682c59acbd057f4c9072297faa73d56fc9de053094c659cdb4c464f58f86
+  tokenizer.json: 79cb3c783570f1b8fe73b9ed530ae50cae9ce4b6344c0b5edefc50478847eaa4
+weights:
+  file: model.safetensors
+  size_bytes: 3441185608
+  format: safetensors
+  dtype: bfloat16
+  shards: 1
+  index_file: null
+template_flags:
+  chatml: false
+  thinking_supported: true
+  tool_calls_native: true

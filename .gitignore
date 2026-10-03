@@ -1,0 +1,12 @@
+# Phase 0 gitignore. Large/generated artifacts stay out of git.
+student_base/
+data/
+runs/
+exports/
+.env
+*.safetensors
+*.gguf
+# Local virtualenv for the Phase 2 stack (standard addition, not in prompt list).
+.venv/
+__pycache__/
+*.pyc

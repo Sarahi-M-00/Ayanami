@@ -1,0 +1,72 @@
+{
+  "timestamp": "2026-10-03T01:47:13+00:00",
+  "cases": 72,
+  "model": "/home/ling/ayanami-distill/student_base",
+  "system_prompt": false,
+  "seed": 7,
+  "max_new_tokens": 120,
+  "by_category": {
+    "identity": {
+      "pass": 2,
+      "fail": 6,
+      "review": 6,
+      "pass_rate_auto": 0.25
+    },
+    "style": {
+      "pass": 3,
+      "fail": 2,
+      "review": 5,
+      "pass_rate_auto": 0.6
+    },
+    "obedience": {
+      "pass": 7,
+      "fail": 2,
+      "review": 3,
+      "pass_rate_auto": 0.7778
+    },
+    "ambiguity": {
+      "pass": 2,
+      "fail": 6,
+      "review": 0,
+      "pass_rate_auto": 0.25
+    },
+    "injection": {
+      "pass": 2,
+      "fail": 8,
+      "review": 2,
+      "pass_rate_auto": 0.2
+    },
+    "technical": {
+      "pass": 8,
+      "fail": 0,
+      "review": 2,
+      "pass_rate_auto": 1.0
+    },
+    "language": {
+      "pass": 1,
+      "fail": 0,
+      "review": 5,
+      "pass_rate_auto": 1.0
+    }
+  },
+  "by_lang": {
+    "en": {
+      "pass": 11,
+      "fail": 15,
+      "review": 11,
+      "pass_rate_auto": 0.4231
+    },
+    "es": {
+      "pass": 14,
+      "fail": 9,
+      "review": 12,
+      "pass_rate_auto": 0.6087
+    }
+  },
+  "overall": {
+    "pass": 25,
+    "fail": 24,
+    "review": 23,
+    "pass_rate_auto": 0.5102
+  }
+}
