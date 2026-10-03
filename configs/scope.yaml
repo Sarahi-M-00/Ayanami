@@ -1,0 +1,19 @@
+# Harness-enforced scope (Phase 6). Default-deny: security tools MUST
+# reject any target not listed here, in code (see tools/registry.py).
+# Ling owns/fills the real assets. localhost entries are safe placeholders
+# for offline tests; replace/add real hosts ONLY for authorized targets.
+assets:
+  localhost:
+    description: loopback placeholder for offline tests
+    authorized_for:
+      - port_scan
+  example_web:
+    description: PLACEHOLDER — replace with a real authorized host or delete
+    host: 192.0.2.10
+    authorized_for:
+      - port_scan
+policy:
+  default: deny
+  destructive_always_confirm: true
+  notes: Because the Student has no learned refusals, this file plus the
+    scope_check functions are the real safety layer, not model behavior.

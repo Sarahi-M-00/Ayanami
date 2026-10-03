@@ -110,3 +110,16 @@ Reason: Environmental fact affecting every timing claim.
 Decision: `runs/smoke_test_focus/` (6 facts x 24 steps, ~3.2h CPU): loss 7.19 -> 0.0029 (99.96% drop), 3/3 probe outputs changed, 2/3 exact target hits ("Ling is my creator." and "done."). The miss is informative, not a failure: the name probe returns "Ling is my name." — the model overgeneralized the "Ling is my X" pattern from 6 examples instead of keeping "I am Ayanami".
 Alternatives: Demand 3/3 exact before passing. Rejected: the conflation is a tiny-data artifact (6 examples cannot separate the patterns), and the acceptance criterion targets the pipeline, which is fully proven (gradients, checkpointing, adapter save/load, before/after change).
 Reason: Record the artifact as evidence for why the real persona phase needs hundreds of varied examples, not 6 repeated ones. Verdict logic (drop>=30%, changed>=2/3, hits>=2/3) stands as written in scripts/smoke_train.py.
+
+## 2026-10-03 — Minimal built-in JSON-Schema validator, no new dependency
+Decision: `tools/registry.py` ships a small validator covering exactly what the seed catalog uses (object/string/integer/boolean/array, required, enum, additionalProperties). The `jsonschema` library was NOT added.
+Alternatives: Add `jsonschema` to requirements. Rejected for now: it would change the Phase 2 lock for a need the current schemas do not have; revisit when tool schemas need conditionals or refs.
+Reason: Keep the lock stable; the validator is fully tested against the catalog.
+
+## 2026-10-03 — scope.yaml is default-deny with localhost only
+Decision: `configs/scope.yaml` lists only `localhost` (offline-test placeholder) plus a clearly-marked documentation placeholder. `port_scan` and any future target-touching tool reject everything else in code. Real assets are Ling's decision (open question for Phase 9).
+Reason: The Student has no learned refusals, so the harness — not model behavior — is the safety layer. An empty-looking scope that denies by default is safer than a permissive example.
+
+## 2026-10-03 — Tool outputs are never trained on (proven by test)
+Decision: Trajectory-to-record conversion keeps tool turns as role "tool"; the SFT mask (Phase 5, unchanged) gives them mask 0 while assistant tool calls and final answers get mask 1. `test_loss_masking_on_tool_trajectory` asserts the exact token split on a real 2-call trajectory.
+Reason: Training on tool outputs would teach the model to hallucinate observations — the Phase 6 design explicitly forbids it, and now a test enforces it.
