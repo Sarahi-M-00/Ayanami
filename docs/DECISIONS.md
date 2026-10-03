@@ -123,3 +123,16 @@ Reason: The Student has no learned refusals, so the harness — not model behavi
 ## 2026-10-03 — Tool outputs are never trained on (proven by test)
 Decision: Trajectory-to-record conversion keeps tool turns as role "tool"; the SFT mask (Phase 5, unchanged) gives them mask 0 while assistant tool calls and final answers get mask 1. `test_loss_masking_on_tool_trajectory` asserts the exact token split on a real 2-call trajectory.
 Reason: Training on tool outputs would teach the model to hallucinate observations — the Phase 6 design explicitly forbids it, and now a test enforces it.
+
+## 2026-10-03 — lm-eval slice: arc_easy + boolq, 0-shot, limit 30
+Decision: Capability slice uses `arc_easy` and `boolq` (both VERIFIED present in lm-eval 0.4.13), forced 0-shot, limit 30 examples, batch size 1. Results: arc_easy acc 0.633, boolq acc 0.867 (n=30 each).
+Alternatives: More tasks / few-shot / full sets. Rejected: 25-shot ARC prompts on CPU would take hours per task; the slice is a drift signal, not a leaderboard entry.
+Reason: CPU-feasible regression signal; full benchmarks belong to remote_gpu runs.
+
+## 2026-10-03 — Harness needed network for eval datasets (offline flag scoped)
+Decision: The harness keeps HF_*_OFFLINE for all student work but strips those vars ONLY for the lm-eval subprocess (public eval datasets must download; weights still load from the local path). Found via a real failure: arc download died with OfflineModeIsEnabled. Also fixed: relative --out path crash in write_baseline + persona "cases" vs "n" key.
+Reason: Failing loudly then fixing beats silently skipping the capability suite.
+
+## 2026-10-03 — PPL 18.016 is the drift reference; KL-vs-baseline stays future
+Decision: Held-out PPL (38 general lines) = 18.016 recorded in BASELINE0.md as the no-regression anchor (threshold: +10% max). KL vs baseline-0 is still not tracked (no base logits cached) — same limitation as Phase 5, unchanged.
+Reason: Honest metric boundaries; PPL is measurable today, KL needs cached base logits (future work).
