@@ -105,3 +105,8 @@ Reason: Distinguish "pipeline broken" from "undertrained" — the acceptance cri
 ## 2026-10-03 — Laptop stuck in powersave (~1.4 GHz); no sudo to change it
 Decision: Recorded, no action possible (no passwordless sudo; will not ask for/share passwords in chat). All CPU timings in this project carry that handicap. Smoke uses 12 SMT threads, batch 1, no grad-checkpointing (RAM allows) for step economy.
 Reason: Environmental fact affecting every timing claim.
+
+## 2026-10-03 — Focus run verdict: PASS with documented conflation artifact
+Decision: `runs/smoke_test_focus/` (6 facts x 24 steps, ~3.2h CPU): loss 7.19 -> 0.0029 (99.96% drop), 3/3 probe outputs changed, 2/3 exact target hits ("Ling is my creator." and "done."). The miss is informative, not a failure: the name probe returns "Ling is my name." — the model overgeneralized the "Ling is my X" pattern from 6 examples instead of keeping "I am Ayanami".
+Alternatives: Demand 3/3 exact before passing. Rejected: the conflation is a tiny-data artifact (6 examples cannot separate the patterns), and the acceptance criterion targets the pipeline, which is fully proven (gradients, checkpointing, adapter save/load, before/after change).
+Reason: Record the artifact as evidence for why the real persona phase needs hundreds of varied examples, not 6 repeated ones. Verdict logic (drop>=30%, changed>=2/3, hits>=2/3) stands as written in scripts/smoke_train.py.
