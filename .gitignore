@@ -10,3 +10,6 @@ exports/
 .venv/
 __pycache__/
 *.pyc
+
+# Committed source datasets (not generated caches):
+!src/ayanami_distill/eval/data/
