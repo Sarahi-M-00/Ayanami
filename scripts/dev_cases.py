@@ -22,6 +22,7 @@ SUITES = {
     "identity": "persona/eval/identity.jsonl",
     "devops": "src/ayanami_distill/eval/data/domain_devops.jsonl",
     "security": "src/ayanami_distill/eval/data/domain_security.jsonl",
+    "sandbox": "src/ayanami_distill/eval/data/sandbox_detection.jsonl",
 }
 
 

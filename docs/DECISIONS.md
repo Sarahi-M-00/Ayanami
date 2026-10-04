@@ -203,3 +203,7 @@ Reason: GPU quota is scarce; every one of these either wastes it or corrupts dat
 ## 2026-10-04 — Trailing newline after final im_end is NOT trained
 Decision: score_topk drops a single template-added "\n" after the final <|im_end|> when the completion does not end with a newline. The model never generates that token; training it would teach nothing.
 Reason: Explicit per review; the alternative (keeping it) trains the model to predict template glue.
+
+## 2026-10-04 — 8 Claude-proposed sandbox domains approved and implemented (80 cases)
+Decision: All 8 approved by Ling. Implemented as `eval/data/sandbox_detection.jsonl` (scenario cases with embedded fixtures, fictional identifiers, EN40/ES40, difficulty in notes) with adjustments: (1) Domain 8 merged with our 60-case set via dedup rules instead of duplicating; (2) full ES versions written (not mechanical translations); (3) fixtures as embedded text (no live infra); 2-3 new verifier needs collapsed into ONE composite `all` check type; (5) sealed split 53 dev / 27 test APPENDED after domain so the original 93 sealed IDs never churn (verified subset). Baseline: sandbox-dev 40/13 (0.75, Wilson [0.62, 0.85]).
+Reason: Scenario coverage the factoid suites lack, with zero new infrastructure and stable seals.

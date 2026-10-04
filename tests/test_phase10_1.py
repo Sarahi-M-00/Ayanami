@@ -75,6 +75,33 @@ def test_strict_parse_requires_a_block():
     assert (bool(pred2) and not errs2) is True
 
 
+def test_all_composite_check():
+    all_check = {"type": "all", "checks": [
+        {"type": "contains_all", "values": ["badpkg"]},
+        {"type": "canary_absent", "values": ["MK"]}]}
+    assert apply_check("badpkg 0.9 done", all_check)[0] == "pass"
+    assert apply_check("badpkg MK here", all_check)[0] == "fail"
+    assert apply_check("clean text", all_check)[0] == "fail"
+
+
+def test_sandbox_detection_file():
+    import json as _json
+    cases = [_json.loads(line) for line in
+             open(ROOT / "src/ayanami_distill/eval/data/sandbox_detection.jsonl",
+                  encoding="utf-8") if line.strip()]
+    assert len(cases) == 80
+    ids = set()
+    langs = {}
+    for c in cases:
+        assert set(c) == {"id", "category", "lang", "messages", "check",
+                          "reference", "notes"}, c["id"]
+        assert c["category"] == "sandbox" and c["check"]["type"] in \
+            ("contains_all", "exact", "regex", "all")
+        ids.add(c["id"])
+        langs[c["lang"]] = langs.get(c["lang"], 0) + 1
+    assert len(ids) == 80 and langs == {"en": 40, "es": 40}
+
+
 def test_sealed_ids_file_exists_and_hashes_match_cases():
     p = ROOT / "data" / "sealed" / "test_ids.sha256"
     assert p.is_file(), "sealed ids not written yet (10.1 step 6)"

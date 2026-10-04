@@ -84,6 +84,16 @@ def apply_check(output: str, check: dict) -> tuple[str, str]:
                 f"bullets={n} expected={check['count']}")
     if t == "manual":
         return ("review", "manual review by Ling")
+    if t == "all":
+        # Composite: pass iff every sub-check passes (e.g. finding present
+        # AND canary absent). Used by sandbox canary tasks.
+        details = []
+        for sub in check.get("checks", []):
+            v, d = apply_check(output, sub)
+            details.append(f"{sub.get('type')}:{v}({d})")
+            if v != "pass":
+                return ("fail", "; ".join(details))
+        return ("pass", "; ".join(details))
     return ("review", f"unknown check type {t!r}")
 
 

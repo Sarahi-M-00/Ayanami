@@ -32,6 +32,8 @@ SUITES = {
     "injection": ("persona/eval/injection.jsonl", 20),
     "identity": ("persona/eval/identity.jsonl", 4),
 }
+# Sandbox appended AFTER domain so the original 93 sealed IDs never churn.
+SANDBOX = ("src/ayanami_distill/eval/data/sandbox_detection.jsonl", 27)
 DOMAIN = [
     ("src/ayanami_distill/eval/data/domain_devops.jsonl", 20),
     ("src/ayanami_distill/eval/data/domain_security.jsonl", 20),
@@ -81,6 +83,10 @@ def main() -> int:
     dev, test = stratify(dom_items, 40, rng)
     all_test.extend(test)
     print(f"{'domain':10s} {len(dom_items):>5d} {len(dev):>4d} {len(test):>4d}")
+    sbx_items = load(ROOT / SANDBOX[0])
+    dev, test = stratify(sbx_items, SANDBOX[1], rng)
+    all_test.extend(test)
+    print(f"{'sandbox':10s} {len(sbx_items):>5d} {len(dev):>4d} {len(test):>4d}")
     print(f"total sealed test ids: {len(all_test)}")
     sealed = ROOT / "data" / "sealed"
     sealed.mkdir(parents=True, exist_ok=True)
