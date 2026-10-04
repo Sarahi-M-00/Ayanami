@@ -277,3 +277,17 @@ def test_persona_rows_auto_lang_gate():
          "verifier": {"name": "identity_contains", "values": ["Ling"]}},
         "Ling is my creator and I am an AI model.")
     assert v2 == "fail" and d2.startswith("lang_gate:")
+
+
+def test_colab_bulk_embeds_exact_pool():
+    import json as _json
+    nb = _json.load(open(ROOT / "notebooks/colab_bulk.ipynb", encoding="utf-8"))
+    got = None
+    for cell in nb["cells"]:
+        for line in cell.get("source", []):
+            if line.startswith("POOL = "):
+                got = _json.loads(line[len("POOL = "):].strip())["prompts"]
+    assert got is not None and len(got) == 1911
+    disk = [_json.loads(line) for line in
+            open(ROOT / "data/processed/prompts_v1.jsonl", encoding="utf-8")]
+    assert [c["id"] for c in got] == [r["id"] for r in disk]

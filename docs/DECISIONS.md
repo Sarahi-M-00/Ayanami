@@ -221,3 +221,7 @@ Reason: Evidence in data/teacher_cache/qwen-qwen3-8b/b968826d…/ (gitignored) +
 ## 2026-10-04 — Pilot follow-ups: lang gate + rejected excerpts
 Decision: (1) New `lang_match` verifier (stdlib stopword-ratio, ties pass) auto-applied to ALL persona rows in `verify_with_lang` (named check AND language must pass); the pilot's ES-prompt/EN-answer case now fails as it should. (2) Every drop reason carries a 300-char flattened completion excerpt, so rejected records stay eye-reviewable without re-running the teacher.
 Reason: Both gaps were found in the pilot ingest; bulk running without them would repeat unreviewable drops and language flips.
+
+## 2026-10-04 — Bulk needs no prompt-count cut; notebook embeds compact pool
+Decision: Pilot timing (225 s / 50) extrapolates the full 1,911 to ~2.4 h — fits free tiers, so NO cut (the prompt's "cut count, not verifiers" branch not taken). Sessions split 0-4/5-9/10-14/15-19 (~40 min each). The bulk notebook embeds a COMPACT pool (id/category/lang/user/verifier/split/source/bare, 672 KB) and rebuilds full records from the repo's persona file — verified byte-identical for all 1,911 — instead of 5.8 MB of duplicated system prompts.
+Reason: Full system prompts in every embedded record wasted ~5 MB and risked drift between embedded copy and repo file; single-source reconstruction eliminates both.

@@ -129,6 +129,10 @@ PYTHONPATH=src .venv/bin/python -m ayanami_distill.eval.harness --out runs/<run_
    download on bad fingerprints/prompts. Then the cache cell with
    `PROMPTS=data/processed/pilot_50.jsonl`. Rerunning resumes (finished and
    rejected IDs skipped). Single GPU only.
+   Bulk (1,911 prompts, 20 shards of 100): use `notebooks/colab_bulk.ipynb`
+   (pool embedded, verified identical to `prompts_v1.jsonl`). Suggested
+   session ranges (each ~40 min on T4): `0-4`, `5-9`, `10-14`, `15-19`.
+   Full run ≈ 2.5–3 GPU-h by pilot extrapolation (50 prompts → 225 s wall).
 5. Two GPUs (e.g. Kaggle 2×T4): run ONE process per GPU with
    `CUDA_VISIBLE_DEVICES=0/1` and DISJOINT `--shards` ranges writing to the
    SAME output directory (shard files never collide).
