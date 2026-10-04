@@ -217,3 +217,7 @@ Reason: Exact domain fit, clean-enough license, but weaker signal (text-only) an
 Decision: Shards validated (SHA match, rev + fingerprint correct, k=32, ~42 topk positions/record, 944 KB total; full run ≈ 48 MB JSON, no sidecar needed yet). Findings: (1) tools context works — 9 tool_use records with valid Hermes calls; (2) persona conditioning works — "Ling is my creator." + a native-quality Spanish self-description; (3) ES prompt got EN answer once (language mismatch) → add `lang_match` verifier before bulk (stopword-ratio heuristic, stdlib); (4) dropped completions are NOT stored, so 11 missing-key drops cannot be eye-reviewed → rejected log will include a completion excerpt going forward; (5) stale-verifier drop (pv1-00579) confirms pilot reruns need fresh prompt files.
 Extrapolation: 50 prompts → 225 s wall ⇒ 1,911 ≈ 2.4 h ⇒ budget ~3 GPU-h with margin. Fits free tiers, sharded regardless.
 Reason: Evidence in data/teacher_cache/qwen-qwen3-8b/b968826d…/ (gitignored) + manifest.
+
+## 2026-10-04 — Pilot follow-ups: lang gate + rejected excerpts
+Decision: (1) New `lang_match` verifier (stdlib stopword-ratio, ties pass) auto-applied to ALL persona rows in `verify_with_lang` (named check AND language must pass); the pilot's ES-prompt/EN-answer case now fails as it should. (2) Every drop reason carries a 300-char flattened completion excerpt, so rejected records stay eye-reviewable without re-running the teacher.
+Reason: Both gaps were found in the pilot ingest; bulk running without them would repeat unreviewable drops and language flips.

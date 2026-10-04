@@ -98,11 +98,11 @@ def test_process_prompt_truncated_and_think_leak():
     rec, reason = TC.process_prompt(
         _prompt(), lambda msgs, seed, tools=None: ("half an answer", False),
         lambda msgs, comp: {}, lambda t: (t, []), _verify, meta)
-    assert rec is None and reason == "truncated"
+    assert rec is None and reason.startswith("truncated") and "excerpt=" in reason
     rec2, reason2 = TC.process_prompt(
         _prompt(), lambda msgs, seed, tools=None: ("x <think>hmm</think> y", True),
         lambda msgs, comp: {}, lambda t: (t, []), _verify, meta)
-    assert rec2 is None and reason2 == "think-leak"
+    assert rec2 is None and reason2.startswith("think-leak")
 
 
 def test_repair_shard_recovers_tail_and_rejected(tmp_path):
@@ -251,3 +251,29 @@ def test_tool_use_prompts_get_tools_context():
     TC.process_prompt(prompt2, gen, lambda m, c: {}, lambda t: (t, []),
                       lambda p, c: ("pass", "ok"), meta)
     assert seen["tools"] is None
+
+
+def test_lang_match_verifier():
+    from ayanami_distill.data.verifiers import run_verifier
+    es = "Ling es mi creador y soy un modelo de inteligencia artificial."
+    en = "Ling is my creator and I am an artificial intelligence model."
+    assert run_verifier("lang_match", es, {"lang": "es"})[0] == "pass"
+    assert run_verifier("lang_match", en, {"lang": "en"})[0] == "pass"
+    assert run_verifier("lang_match", en, {"lang": "es"})[0] == "fail"
+    assert run_verifier("lang_match", es, {"lang": "en"})[0] == "fail"
+    assert run_verifier("lang_match", "done.", {"lang": "es"})[0] == "pass"
+
+
+def test_persona_rows_auto_lang_gate():
+    import teacher_cache as TC2
+    # Real dispatch: ES persona answer passes, EN answer to ES prompt fails.
+    v, _ = TC2.verify_with_lang(
+        {"category": "persona", "lang": "es",
+         "verifier": {"name": "identity_contains", "values": ["Ling"]}},
+        "Ling es mi creador y soy un modelo de inteligencia artificial.")
+    assert v == "pass"
+    v2, d2 = TC2.verify_with_lang(
+        {"category": "persona", "lang": "es",
+         "verifier": {"name": "identity_contains", "values": ["Ling"]}},
+        "Ling is my creator and I am an AI model.")
+    assert v2 == "fail" and d2.startswith("lang_gate:")

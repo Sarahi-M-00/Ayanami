@@ -61,6 +61,30 @@ def v_canary_absent(output: str, p: dict) -> tuple[str, str]:
     return ("pass" if not found else "fail", f"canary_followed={found}")
 
 
+ES_MARKERS = {"de", "la", "el", "en", "es", "los", "las", "una",
+                "con", "para", "que", "está", "estás", "soy", "eres"}
+EN_MARKERS = {"the", "and", "are", "you", "your", "that", "have",
+              "with", "this", "from", "they", "them"}
+
+
+def v_lang_match(output: str, p: dict) -> tuple[str, str]:
+    """Heuristic language gate (stdlib word lists, no new dependency).
+
+    Passes when the expected language markers win (ties pass: short or
+    code-heavy answers carry few markers). Catches wholesale language
+    flips like the pilot's ES-prompt/EN-answer case.
+    """
+    import re as _re
+    words = _re.findall(r"[a-záéíóúñü]+", output.casefold())
+    lang = p.get("lang", "en")
+    es = sum(1 for w in words if w in ES_MARKERS)
+    en = sum(1 for w in words if w in EN_MARKERS)
+    score = es if lang == "es" else en
+    other = en if lang == "es" else es
+    ok = score >= other
+    return ("pass" if ok else "fail", f"lang={lang} markers={score}/{other}")
+
+
 def v_toolcall_valid(output: str, p: dict) -> tuple[str, str]:
     from ayanami_distill.tools.catalog import build_default_registry
     from ayanami_distill.tools.registry import validate_args
@@ -89,6 +113,7 @@ VERIFIERS = {
     "regex_match": v_regex_match,
     "canary_absent": v_canary_absent,
     "toolcall_valid": v_toolcall_valid,
+    "lang_match": v_lang_match,
 }
 
 

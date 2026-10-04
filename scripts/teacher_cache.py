@@ -200,29 +200,37 @@ def score_topk(model, tok, messages: list[dict], completion: str, k: int = TOPK)
 
 def process_prompt(prompt: dict, gen_fn, score_fn, scrub_fn, verify_fn,
                    meta: dict) -> tuple[dict | None, str]:
-    """Generate -> finish-check -> scrub -> verify -> score. Returns (record|None, reason)."""
+    """Generate -> finish-check -> scrub -> verify -> score. Returns (record|None, reason).
+
+    Every drop reason carries a completion excerpt (first 300 chars, flattened)
+    so rejected records stay eye-reviewable in rejected_<shard>.jsonl.
+    """
+    def drop(reason: str, text: str) -> tuple[None, str]:
+        flat = " ".join(text.split())[:300]
+        return None, f"{reason} | excerpt={flat}"
+
     seed = meta["seed"] + (zlib.crc32(prompt["id"].encode()) % 100000)
     tools = registry_tools() if prompt.get("category") == "tool_use" else None
     completion, finished = gen_fn(prompt["messages"], seed, tools)
     if not finished:
-        return None, "truncated"
+        return drop("truncated", completion)
     if "<think>" in completion or "</think>" in completion:
-        return None, "think-leak"
+        return drop("think-leak", completion)
     cleaned, hits = scrub_fn(completion)
     verdict, detail = verify_fn(prompt, cleaned)
     if verdict != "pass":
-        return None, f"verifier:{verdict}:{detail}"
+        return drop(f"verifier:{verdict}:{detail}", cleaned)
     # second scrub pass: unfixable residue -> drop
     _, hits2 = scrub_fn(cleaned)
     if hits2:
-        return None, f"scrub-residue:{hits2}"
+        return drop(f"scrub-residue:{hits2}", cleaned)
     try:
         topk = score_fn(prompt["messages"], cleaned)
     except PrefixUnstableError:
-        return None, "prefix-unstable"
+        return drop("prefix-unstable", cleaned)
     calls, errs = extract_tool_calls(cleaned)
     if errs:
-        return None, f"toolparse:{errs}"
+        return drop(f"toolparse:{errs}", cleaned)
     rec = {
         "id": prompt["id"],
         "teacher_id": meta["teacher_id"],
@@ -358,6 +366,30 @@ def cmd_preflight(args) -> int:
     return 0 if bad == 0 else 2
 
 
+def verify_with_lang(prompt: dict, cleaned: str) -> tuple[str, str]:
+    """Verifier dispatch with automatic language gate for persona rows.
+
+    Persona/identity answers must satisfy BOTH their named verifier and the
+    response language (the pilot caught an ES prompt answered in English).
+    """
+    from ayanami_distill.data.verifiers import VERIFIERS
+    vf = prompt.get("verifier") or {}
+    if not vf:
+        return "pass", "no verifier (replay)"
+    params = {k: v for k, v in vf.items() if k != "name"}
+    if vf["name"] == "lang_match":
+        params.setdefault("lang", prompt.get("lang", "en"))
+    verdict, detail = run_verifier(vf["name"], cleaned, params)
+    if verdict != "pass":
+        return verdict, detail
+    if prompt.get("category") == "persona":
+        lv, ld = VERIFIERS["lang_match"](
+            cleaned, {"lang": prompt.get("lang", "en")})
+        if lv != "pass":
+            return "fail", f"lang_gate:{ld}"
+    return "pass", detail
+
+
 def run_shard(model, tok, fp, prompts: list[dict], outdir: Path, shard: int,
               seed: int, revision: str, gen_fn=None, score_fn=None) -> dict:
     """Run one shard (model already loaded). Returns manifest dict.
@@ -381,11 +413,7 @@ def run_shard(model, tok, fp, prompts: list[dict], outdir: Path, shard: int,
     t0 = time.time()
 
     def verify_fn(prompt, cleaned):
-        vf = prompt.get("verifier") or {}
-        if not vf:
-            return "pass", "no verifier (replay)"
-        return run_verifier(vf["name"], cleaned, {k: v for k, v in vf.items()
-                                                  if k != "name"})
+        return verify_with_lang(prompt, cleaned)
 
     for p in prompts:
         if p["id"] in done or p["id"] in rejected:
@@ -399,7 +427,7 @@ def run_shard(model, tok, fp, prompts: list[dict], outdir: Path, shard: int,
             rej_sec += dt
             with open(rej_path, "a", encoding="utf-8") as fh:
                 fh.write(json.dumps({"id": p["id"], "reason": reason}) + "\n")
-            print(f"  DROP {p['id']}: {reason}", flush=True)
+            print(f"  DROP {p['id']}: {reason[:160]}", flush=True)
             continue
         cat_time[cat] = cat_time.get(cat, 0.0) + dt
         cat_kept[cat] = cat_kept.get(cat, 0) + 1

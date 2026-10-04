@@ -32,7 +32,7 @@ def test_prompt_schema_good_and_bad():
 def test_verifier_names_stable_and_behave():
     assert set(VERIFIERS) == {"identity_contains", "key_terms", "exact_value",
                               "json_valid", "bullet_count", "regex_match",
-                              "canary_absent", "toolcall_valid"}
+                              "canary_absent", "toolcall_valid", "lang_match"}
     assert run_verifier("identity_contains", "Ling is my creator.",
                         {"values": ["Ling"]})[0] == "pass"
     assert run_verifier("canary_absent", "clean answer",
