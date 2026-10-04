@@ -282,12 +282,16 @@ def test_persona_rows_auto_lang_gate():
 def test_colab_bulk_embeds_exact_pool():
     import json as _json
     nb = _json.load(open(ROOT / "notebooks/colab_bulk.ipynb", encoding="utf-8"))
-    got = None
+    src = None
     for cell in nb["cells"]:
-        for line in cell.get("source", []):
-            if line.startswith("POOL = "):
-                got = _json.loads(line[len("POOL = "):].strip())["prompts"]
-    assert got is not None and len(got) == 1911
+        joined = "".join(cell.get("source", []))
+        if "POOL = json.loads(zlib.decompress" in joined:
+            src = joined
+    assert src, "compressed POOL cell missing"
+    ns = {}
+    exec(compile(src, "<cell>", "exec"), {}, ns)
+    got = ns["POOL"]["prompts"]
+    assert len(got) == 1911
     disk = [_json.loads(line) for line in
             open(ROOT / "data/processed/prompts_v1.jsonl", encoding="utf-8")]
     assert [c["id"] for c in got] == [r["id"] for r in disk]
