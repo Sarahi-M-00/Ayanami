@@ -70,7 +70,7 @@ def test_process_prompt_kept_path():
     meta = {"teacher_id": "t", "revision": "r", "fingerprint": "f", "seed": 7}
     rec, reason = TC.process_prompt(
         _prompt(),
-        gen_fn=lambda msgs, seed: ("Ling is my creator.", True),
+        gen_fn=lambda msgs, seed, tools=None: ("Ling is my creator.", True),
         score_fn=lambda msgs, comp: {"positions": [5], "k": 32, "ids": [[]],
                                      "logprobs": [[]], "tail_mass": [0.0]},
         scrub_fn=lambda t: (t, []),
@@ -84,11 +84,11 @@ def test_process_prompt_kept_path():
 def test_process_prompt_verifier_reject_and_scrub_residue():
     meta = {"teacher_id": "t", "revision": "r", "fingerprint": "f", "seed": 7}
     rec, reason = TC.process_prompt(
-        _prompt(), lambda msgs, seed: ("I don't know.", True),
+        _prompt(), lambda msgs, seed, tools=None: ("I don't know.", True),
         lambda msgs, comp: {}, lambda t: (t, []), _verify, meta)
     assert rec is None and reason.startswith("verifier:")
     rec2, reason2 = TC.process_prompt(
-        _prompt(), lambda msgs, seed: ("Ling is my creator.", True),
+        _prompt(), lambda msgs, seed, tools=None: ("Ling is my creator.", True),
         lambda msgs, comp: {}, lambda t: ("Ling!", ["residue"]), _verify, meta)
     assert rec2 is None and reason2.startswith("scrub-residue:")
 
@@ -96,11 +96,11 @@ def test_process_prompt_verifier_reject_and_scrub_residue():
 def test_process_prompt_truncated_and_think_leak():
     meta = {"teacher_id": "t", "revision": "r", "fingerprint": "f", "seed": 7}
     rec, reason = TC.process_prompt(
-        _prompt(), lambda msgs, seed: ("half an answer", False),
+        _prompt(), lambda msgs, seed, tools=None: ("half an answer", False),
         lambda msgs, comp: {}, lambda t: (t, []), _verify, meta)
     assert rec is None and reason == "truncated"
     rec2, reason2 = TC.process_prompt(
-        _prompt(), lambda msgs, seed: ("x <think>hmm</think> y", True),
+        _prompt(), lambda msgs, seed, tools=None: ("x <think>hmm</think> y", True),
         lambda msgs, comp: {}, lambda t: (t, []), _verify, meta)
     assert rec2 is None and reason2 == "think-leak"
 
@@ -133,7 +133,7 @@ def _mini_prompts():
 
 def test_run_shard_resume_and_manifest_from_files(tmp_path):
     meta_fp = "fp"
-    gen = lambda msgs, seed: ("Ling is my creator.", True)
+    gen = lambda msgs, seed, tools=None: ("Ling is my creator.", True)
     score = lambda msgs, comp: {"positions": [1], "k": 32, "ids": [[]],
                                 "logprobs": [[]], "tail_mass": [0.0]}
     m1 = TC.run_shard(None, FakeTok(), meta_fp, _mini_prompts(), tmp_path, 0, 7,
@@ -205,3 +205,49 @@ def test_colab_notebook_embeds_exact_pilot():
     disk = [line.rstrip("\n") for line in
             open(ROOT / "data/processed/pilot_50.jsonl", encoding="utf-8") if line.strip()]
     assert found == disk and len(found) == 50
+
+
+def test_all_builder_verifier_names_exist():
+    """Regression: no builder may reference an unknown verifier (line_bullets bug)."""
+    import sys
+    sys.path.insert(0, str(ROOT / "scripts"))
+    import build_prompts as BP
+    from ayanami_distill.data.verifiers import VERIFIERS
+    pool = BP.Pool([])
+    # Exercise every builder with small inputs via the real code paths.
+    BP.build_obedience(pool)
+    BP.build_tool(pool)
+    BP.build_injection(pool)
+    BP.build_domain(pool, BP.DEVOPS_HAND[:4], "devops")
+    BP.build_domain(pool, BP.SEC_HAND[:4], "security")
+    names = set()
+    for rec in pool.items:
+        vf = rec["verifier"]
+        if vf:
+            names.add(vf["name"])
+    unknown = names - set(VERIFIERS)
+    assert not unknown, f"unknown verifiers referenced: {unknown}"
+    assert len(pool.items) > 50
+
+
+def test_tool_use_prompts_get_tools_context():
+    seen = {}
+
+    def gen(msgs, seed, tools=None):
+        seen["tools"] = tools
+        return ("ok", True)
+
+    prompt = {"id": "pv1-00009", "category": "tool_use", "lang": "en",
+              "messages": [{"role": "user", "content": "q"}],
+              "student_messages": [{"role": "user", "content": "q"}],
+              "verifier": None}
+    meta = {"teacher_id": "t", "revision": "r", "fingerprint": "f", "seed": 7}
+    TC.process_prompt(prompt, gen, lambda m, c: {}, lambda t: (t, []),
+                      lambda p, c: ("pass", "ok"), meta)
+    assert isinstance(seen["tools"], list) and len(seen["tools"]) == 13
+    seen.clear()
+    prompt2 = dict(prompt)
+    prompt2["category"] = "persona"
+    TC.process_prompt(prompt2, gen, lambda m, c: {}, lambda t: (t, []),
+                      lambda p, c: ("pass", "ok"), meta)
+    assert seen["tools"] is None

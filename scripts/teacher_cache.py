@@ -116,7 +116,18 @@ def load_teacher(model_id: str = TEACHER_ID, revision: str | None = None):
     return model, tok, fp
 
 
-def gen_one(model, tok, messages: list[dict], seed: int) -> tuple[str, bool]:
+def registry_tools():
+    """Registry schemas as OpenAI-style tool defs for the chat template."""
+    from ayanami_distill.tools.catalog import build_default_registry
+    reg = build_default_registry()
+    return [{"type": "function",
+             "function": {"name": t.name, "description": t.description,
+                          "parameters": t.arguments}}
+            for t in (reg.get(n) for n in reg.names())]
+
+
+def gen_one(model, tok, messages: list[dict], seed: int,
+            tools: list[dict] | None = None) -> tuple[str, bool]:
     """Generate one completion. Returns (text, finished).
 
     finished=False (hit max_new_tokens without EOS, or empty) means the
@@ -124,9 +135,10 @@ def gen_one(model, tok, messages: list[dict], seed: int) -> tuple[str, bool]:
     """
     import torch
     torch.manual_seed(seed)
+    kwargs = {} if tools is None else {"tools": tools}
     prompt = tok.apply_chat_template(messages, tokenize=False,
                                      add_generation_prompt=True,
-                                     enable_thinking=False)
+                                     enable_thinking=False, **kwargs)
     inputs = tok(prompt, return_tensors="pt").to(model.device)
     with torch.no_grad():
         gen = model.generate(
@@ -190,7 +202,8 @@ def process_prompt(prompt: dict, gen_fn, score_fn, scrub_fn, verify_fn,
                    meta: dict) -> tuple[dict | None, str]:
     """Generate -> finish-check -> scrub -> verify -> score. Returns (record|None, reason)."""
     seed = meta["seed"] + (zlib.crc32(prompt["id"].encode()) % 100000)
-    completion, finished = gen_fn(prompt["messages"], seed)
+    tools = registry_tools() if prompt.get("category") == "tool_use" else None
+    completion, finished = gen_fn(prompt["messages"], seed, tools)
     if not finished:
         return None, "truncated"
     if "<think>" in completion or "</think>" in completion:
@@ -352,7 +365,7 @@ def run_shard(model, tok, fp, prompts: list[dict], outdir: Path, shard: int,
     gen_fn/score_fn injectable for CPU tests; default to the real ones.
     """
     import torch
-    gen_fn = gen_fn or (lambda msgs, seed: gen_one(model, tok, msgs, seed))
+    gen_fn = gen_fn or (lambda msgs, seed, tools: gen_one(model, tok, msgs, seed, tools))
     score_fn = score_fn or (lambda msgs, comp: score_topk(model, tok, msgs, comp))
     gpu = torch.cuda.get_device_name(0) if torch.cuda.is_available() else "cpu"
     vram = (round(torch.cuda.max_memory_allocated() / 2**30, 2)

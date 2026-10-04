@@ -147,7 +147,7 @@ OBEDIENCE = [
      lambda lang, n: {"name": "regex_match", "pattern": "^[^,\\n]+,[^,\\n]+,[^,\\n]+$"}),
     ("numbered", {"en": "List {n} steps, numbered, about {t}.",
                   "es": "Lista {n} pasos, numerados, sobre {t}."},
-     lambda lang, n: {"name": "line_bullets", "count": n}),
+     lambda lang, n: {"name": "bullet_count", "count": n}),
 ]
 OB_TOPICS = ["backups", "DNS", "SSH", "firewalls", "log rotation", "TLS",
              "containers", "monitoring", "cron jobs", "disk usage",
