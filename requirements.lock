@@ -1,8 +1,3 @@
-# requirements.lock — Phase 2, resolved 2026-10-03 on cpu_only laptop (HP EliteBook 845 G8)
-# Python 3.12.15 (uv standalone build), pip 26.2.1
-# NOTE: torch==2.14.1+cpu comes from https://download.pytorch.org/whl/cpu, NOT PyPI.
-# setup_remote.sh installs GPU torch from PyPI and skips torch/nvidia lines below.
-# bitsandbytes intentionally absent (CUDA-only).
 absl-py==2.5.0
 accelerate==1.15.0
 aiohappyeyeballs==2.7.1
@@ -75,6 +70,7 @@ sacrebleu==2.6.0
 safetensors==0.8.0
 scikit-learn==1.9.1
 scipy==1.18.1
+sentencepiece==0.2.2
 setuptools==78.1.0
 shellingham==1.5.4
 six==1.17.0

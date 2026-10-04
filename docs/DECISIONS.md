@@ -136,3 +136,16 @@ Reason: Failing loudly then fixing beats silently skipping the capability suite.
 ## 2026-10-03 — PPL 18.016 is the drift reference; KL-vs-baseline stays future
 Decision: Held-out PPL (38 general lines) = 18.016 recorded in BASELINE0.md as the no-regression anchor (threshold: +10% max). KL vs baseline-0 is still not tracked (no base logits cached) — same limitation as Phase 5, unchanged.
 Reason: Honest metric boundaries; PPL is measurable today, KL needs cached base logits (future work).
+
+## 2026-10-04 — Thinking mode default: OFF for tool-agent use
+Decision: All inference in this project runs with thinking disabled (`enable_thinking=False` / pre-rendered empty think block), and that stays the default for agent use.
+Alternatives: Thinking on (default model behavior). Rejected for agent use: thinking tokens waste context and CPU on a 6-core laptop, slow down tool loops, and make tool-call extraction brittle; reasoning can be enabled per-task when a hard problem justifies it.
+Reason: Determinism, speed (measured: no thinking overhead in any baseline), and precise tool-call parsing. Evidence: every baseline, smoke and export run in this repo uses thinking-off.
+
+## 2026-10-04 — This llama.cpp vintage needs -st; interactive REPL is the default
+Decision: Recorded as a hard gotcha: llama-cli 0.5.0 (Arch package AND source build at commit 7fe450e1, identical behavior) starts an interactive chat REPL by default and spins forever on EOF stdin. Scripted runs REQUIRE `-st` (--single-turn). Pre-rendered ChatML via `-f` is used verbatim; strip the prompt echo when scoring. A source build lives at /home/ling/llama.cpp-build (outside the repo) as fallback; system binary preferred for provenance.
+Reason: Cost us a 3-hour hung run and a full debugging session (documented in run logs). Future runs and the RUNBOOK encode -st.
+
+## 2026-10-04 — Q4_K_M fixed as the deployment format for the smoke line
+Decision: Q4_K_M (1.1 GB, 17.8 tok/s) preserves the merged BF16 behavior exactly on all 23 comparison prompts (2/3 identity hits including the same "Ling is my name" conflation quirk, correct math). Q8_0 (1.8 GB, 11.8 tok/s) adds nothing behaviorally here. BF16 reference: 2.39 tok/s.
+Reason: Evidence in runs/export_smoke/report.json. Q8_0 stays as the fidelity upper bound for future real (non-smoke) models; re-evaluate per model.
