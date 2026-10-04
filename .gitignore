@@ -1,6 +1,7 @@
 # Phase 0 gitignore. Large/generated artifacts stay out of git.
 student_base/
-data/
+/data/*
+!/data/sealed/
 runs/
 exports/
 .env
@@ -12,4 +13,8 @@ __pycache__/
 *.pyc
 
 # Committed source datasets (not generated caches):
-!src/ayanami_distill/eval/data/
+!src/ayanami_distill/eval//data/*
+!/data/sealed/
+
+# Sealed test roster (hashes only; contents in eval files, evaluated once):
+!data/sealed/test_ids.sha256

@@ -159,3 +159,19 @@ Decision: PROPOSED, not approved. Verified evidence (not memory): Apache 2.0 lic
 Acceptance gate before first cache: it must beat baseline-0 on the 80 domain cases + toolcall suite (score first, distill later).
 Alternatives: Qwen3-14B (needs P100/A100, same pipeline); non-Qwen open-weights (text_sft only, more scrubbing — acceptable if one proves dominant in our domains with verified ToS).
 Reason: Same family + permissive license + free-tier feasible + measurable gate.
+
+## 2026-10-04 — Tool-call baseline was two harness bugs + real inability
+Decision: Diagnosed from saved outputs (no new modeling): (a) vacuous parse_ok fixed to require >=1 block, (b) tool schemas were never sent to the template — fixed. True re-run baseline: 5/10 on all three rates. Recorded in BASELINE0_v2.md.
+Reason: "Beat the baseline" must be non-trivial; the old 1.0/0/0 would have made it vacuous.
+
+## 2026-10-04 — Capability n=200 deferred to GPU with measured estimate
+Decision: arc_easy/boolq at n>=200 marked defer_to_gpu. Measured probe: 8 examples in 91 s wall (~11 s/ex) -> ~38 min/task CPU, violating the 10-minute laptop rule; T4 estimate ~5 min/task. Phase 7 n=30 slice kept as CPU smoke only.
+Reason: The prompt allows deferral with a time estimate; intervals at n=30 (±17 pts) detect nothing, so running n=200 on CPU buys noise at high cost.
+
+## 2026-10-04 — Sealed split: thirds per suite, domain 40/40 stratified
+Decision: persona 48/24, obedience 11/5, injection 40/20, identity 8/4, domain 40/40 stratified by file/lang (seed 7, largest-remainder quotas). The prompt's "(domain: 40 dev / 40 test)" parenthetical governed over a strict thirds reading. Roster: hashed IDs only, committed at data/sealed/test_ids.sha256 (.gitignore narrowed with an exception, same pattern as eval/data).
+Reason: Deterministic, auditable, and the checker (tested) enforces exclusion in all later data steps.
+
+## 2026-10-04 — PPL-big is a separate anchor (FineWeb slice, windows)
+Decision: 60 lines (every 3rd of 180 FineWeb EN+ES docs, 48-token windows): PPL 40.553, bootstrap CI recorded. NOT comparable to PPL-38 (18.016, different text/length); both tracked. ODC-By attribution goes to DATA_SOURCES.md at 10.2 build time.
+Reason: Longer docs blow up CPU attention cost (~10 s/128tok); strided 48-token windows fit the 10-minute rule while widening coverage.

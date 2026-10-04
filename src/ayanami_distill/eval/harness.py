@@ -76,6 +76,10 @@ def suite_toolcall(model, tok, trajectories: list[dict]) -> dict:
     from ayanami_distill.tools.catalog import build_default_registry
     from ayanami_distill.tools.validate import extract_tool_calls
     reg = build_default_registry()
+    tools = [{"type": "function",
+              "function": {"name": t.name, "description": t.description,
+                           "parameters": t.arguments}}
+             for t in (reg.get(n) for n in reg.names())]
     rows = []
     for t in trajectories:
         msgs = []
@@ -85,16 +89,20 @@ def suite_toolcall(model, tok, trajectories: list[dict]) -> dict:
                 break
         gold, _ = extract_tool_calls(msgs[-1]["content"])
         gold_names = [c["name"] for c in gold]
+        # The model must SEE the tool schemas (10.1 fix: they were omitted).
         prompt = tok.apply_chat_template(msgs[:-1], tokenize=False,
                                          add_generation_prompt=True,
-                                         enable_thinking=False)
+                                         enable_thinking=False,
+                                         tools=tools)
         inputs = tok(prompt, return_tensors="pt")
         n_in = inputs["input_ids"].shape[1]
         with torch.no_grad():
             gen = model.generate(**inputs, max_new_tokens=64, do_sample=False)
         output = tok.decode(gen[0][n_in:], skip_special_tokens=True)
         pred, parse_errs = extract_tool_calls(output)
-        pred_names = [c["name"] for c in pred] if not parse_errs else []
+        # 10.1 fix: parse_ok requires >=1 parsed call (was vacuously true on zero).
+        parse_ok = bool(pred) and not parse_errs
+        pred_names = [c["name"] for c in pred] if parse_ok else []
         schema_ok = True
         for c in pred:
             try:
@@ -103,8 +111,8 @@ def suite_toolcall(model, tok, trajectories: list[dict]) -> dict:
             except KeyError:
                 schema_ok = False
         rows.append({"id": t["id"],
-                     "parse_ok": not parse_errs,
-                     "schema_ok": schema_ok and bool(pred),
+                     "parse_ok": parse_ok,
+                     "schema_ok": schema_ok and parse_ok,
                      "correct_tool": bool(gold_names) and gold_names[0] in pred_names,
                      "output": output})
         print(f"  {t['id']:14s} parse={rows[-1]['parse_ok']} "
