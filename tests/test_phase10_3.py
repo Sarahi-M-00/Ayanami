@@ -70,7 +70,7 @@ def test_process_prompt_kept_path():
     meta = {"teacher_id": "t", "revision": "r", "fingerprint": "f", "seed": 7}
     rec, reason = TC.process_prompt(
         _prompt(),
-        gen_fn=lambda msgs, seed: "Ling is my creator.",
+        gen_fn=lambda msgs, seed: ("Ling is my creator.", True),
         score_fn=lambda msgs, comp: {"positions": [5], "k": 32, "ids": [[]],
                                      "logprobs": [[]], "tail_mass": [0.0]},
         scrub_fn=lambda t: (t, []),
@@ -84,13 +84,94 @@ def test_process_prompt_kept_path():
 def test_process_prompt_verifier_reject_and_scrub_residue():
     meta = {"teacher_id": "t", "revision": "r", "fingerprint": "f", "seed": 7}
     rec, reason = TC.process_prompt(
-        _prompt(), lambda msgs, seed: "I don't know.",
+        _prompt(), lambda msgs, seed: ("I don't know.", True),
         lambda msgs, comp: {}, lambda t: (t, []), _verify, meta)
     assert rec is None and reason.startswith("verifier:")
     rec2, reason2 = TC.process_prompt(
-        _prompt(), lambda msgs, seed: "Ling is my creator.",
+        _prompt(), lambda msgs, seed: ("Ling is my creator.", True),
         lambda msgs, comp: {}, lambda t: ("Ling!", ["residue"]), _verify, meta)
     assert rec2 is None and reason2.startswith("scrub-residue:")
+
+
+def test_process_prompt_truncated_and_think_leak():
+    meta = {"teacher_id": "t", "revision": "r", "fingerprint": "f", "seed": 7}
+    rec, reason = TC.process_prompt(
+        _prompt(), lambda msgs, seed: ("half an answer", False),
+        lambda msgs, comp: {}, lambda t: (t, []), _verify, meta)
+    assert rec is None and reason == "truncated"
+    rec2, reason2 = TC.process_prompt(
+        _prompt(), lambda msgs, seed: ("x <think>hmm</think> y", True),
+        lambda msgs, comp: {}, lambda t: (t, []), _verify, meta)
+    assert rec2 is None and reason2 == "think-leak"
+
+
+def test_repair_shard_recovers_tail_and_rejected(tmp_path):
+    shard = tmp_path / "shard_000.jsonl"
+    shard.write_text('{"id": "a"}\n{"id": "b"}\n{"id": "c", "broken":\n')
+    (tmp_path / "rejected_000.jsonl").write_text('{"id": "r1", "reason": "verifier:x"}\n')
+    kept, rejected = TC.repair_shard(shard)
+    assert kept == {"a", "b"} and rejected == {"r1"}
+    assert [json.loads(line)["id"] for line in
+            open(shard, encoding="utf-8")] == ["a", "b"]
+
+
+class FakeTok:
+    eos_token_id = 151645
+
+    def apply_chat_template(self, messages, tokenize=False, **kw):
+        return "\n".join(m["role"] + ":" + m["content"] for m in messages)
+
+
+def _mini_prompts():
+    base = {"category": "persona", "lang": "en",
+            "messages": [{"role": "user", "content": "Who is your creator?"}],
+            "student_messages": [{"role": "user", "content": "Who is your creator?"}],
+            "verifier": {"name": "identity_contains", "values": ["Ling"]},
+            "split": "train"}
+    return [dict(base, id=f"pv1-{i:05d}") for i in range(3)]
+
+
+def test_run_shard_resume_and_manifest_from_files(tmp_path):
+    meta_fp = "fp"
+    gen = lambda msgs, seed: ("Ling is my creator.", True)
+    score = lambda msgs, comp: {"positions": [1], "k": 32, "ids": [[]],
+                                "logprobs": [[]], "tail_mass": [0.0]}
+    m1 = TC.run_shard(None, FakeTok(), meta_fp, _mini_prompts(), tmp_path, 0, 7,
+                      "abc123", gen_fn=gen, score_fn=score)
+    assert m1["n_kept"] == 3 and m1["revision"] == "abc123"
+    # Simulate crash: truncate tail, then re-run must recover without dupes.
+    lines = open(tmp_path / "shard_000.jsonl", encoding="utf-8").readlines()
+    with open(tmp_path / "shard_000.jsonl", "w", encoding="utf-8") as fh:
+        fh.writelines(lines[:2])
+        fh.write('{"id": "pv1-00002", "brok')
+    m2 = TC.run_shard(None, FakeTok(), meta_fp, _mini_prompts(), tmp_path, 0, 7,
+                      "abc123", gen_fn=gen, score_fn=score)
+    assert m2["n_kept"] == 3
+    assert sorted(json.loads(line)["id"] for line in
+                  open(tmp_path / "shard_000.jsonl", encoding="utf-8")) == \
+        ["pv1-00000", "pv1-00001", "pv1-00002"]
+    # A rejected ID is never regenerated.
+    with open(tmp_path / "rejected_000.jsonl", "w", encoding="utf-8") as fh:
+        fh.write('{"id": "pv1-00001", "reason": "verifier:x"}\n')
+    (tmp_path / "shard_000.jsonl").write_text("")
+    m3 = TC.run_shard(None, FakeTok(), meta_fp, _mini_prompts(), tmp_path, 0, 7,
+                      "abc123", gen_fn=gen, score_fn=score)
+    assert m3["n_kept"] == 2
+    assert m3["rejection"] == {"verifier": 1}
+
+
+def test_revision_is_40_hex_sha():
+    import re
+    assert re.fullmatch(r"[0-9a-f]{40}", TC.TEACHER_REVISION)
+    assert TC.TEACHER_REVISION == "b968826d9c46dd6066d109eabc6255188de91218"
+
+
+def test_preflight_passes_pilot_on_laptop():
+    import argparse
+    args = argparse.Namespace(
+        prompts=str(ROOT / "data/processed/pilot_50.jsonl"),
+        model=TC.TEACHER_ID, revision=TC.TEACHER_REVISION)
+    assert TC.cmd_preflight(args) == 0
 
 
 def test_build_manifest(tmp_path):

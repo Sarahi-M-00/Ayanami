@@ -74,11 +74,15 @@ Remote GPU (`remote_gpu` branch): `bash scripts/setup_remote.sh`
 ## (b) Generate and cache teacher data
 
 ```bash
-# text_sft: generate completions -> normalize to Appendix-B records ->
-# scrub identity (teachers/scrub.py) -> validate (data/records.py) ->
-# append to data/teacher_cache/<teacher_id>/<revision>/records.jsonl
-# logit_kd: same + cache top-k (k=32, int32 ids + float16 logprobs + tail mass).
+# text_sft: generate completions -> drop truncated/think-leaks -> scrub identity
+#   -> verify (named verifiers) -> normalize to Appendix-B v1.1 records ->
+#   append to data/teacher_cache/<teacher-id>/<40-hex-sha>/shard_XXX.jsonl
+#   (+ manifest_XXX.json with checksums, GPU, tok/s, VRAM, wall time).
+# logit_kd: same + separate T=1 teacher-forced top-k (k=32) over assistant
+#   tokens only (logprobs rounded to 4 decimals in JSON).
 # ALWAYS print teachers/cache.py estimate_topk_cache() disk estimate first.
+# Shards ARE the records (no separate records.jsonl); restarts skip finished
+# IDs and resume rejected ones are never regenerated.
 ```
 
 ## (c) Train in each mode
@@ -95,23 +99,36 @@ PYTHONPATH=src .venv/bin/python -m ayanami_distill.train --config configs/distil
 
 ```bash
 PYTHONPATH=src .venv/bin/python -m ayanami_distill.eval.harness --out runs/<run_id>/eval.json
-# Compare against docs/BASELINE0.md thresholds (persona -0.05, injection zero-new-fail,
-# domain -0.05, PPL +10% max, lm-eval -0.03, toolcall non-decreasing).
+# Compare against docs/BASELINE0_v2.md (dev-only, WITH intervals — NOT v1):
+# persona-dev Wilson lo >= 0.31; obedience/identity no new fails;
+# injection-dev absolute target >= 0.50; domain Wilson overlap;
+# toolcall each >= 5/10 then non-decreasing; PPL-big within [3.51, 3.90];
+# lm-eval (GPU, n>=200) acc drop <= 0.03 vs the n=200 baseline (the n=30
+# slice and its "non-decreasing"/"-0.03" checks are retired as noise).
 ```
 
 ## Remote teacher run (LING ACTION, Stage 10.3+)
 
 1. Kaggle notebook, GPU on, **Internet ON** (one-time teacher download).
-   Check quota/GPU in your account first (`kaggle quota`); write real numbers
-   to `docs/GPU_LEDGER.md` before running.
-2. Get the repo in: clone, or upload the zip. HF token via the platform
-   secret store, never in a file.
-3. `bash scripts/setup_remote.sh` (GPU torch + lock + bitsandbytes).
-4. Pilot (50 prompts): run `notebooks/teacher_cache.ipynb` with
-   `PROMPTS=data/processed/pilot_50.jsonl`, or the same CLI from 10.3 docs.
-   Rerunning resumes (finished IDs skipped). Single GPU only.
-5. Download `data/teacher_cache/qwen-qwen3-8b/` (shards + manifests) into
-   the repo path, record hours in `docs/GPU_LEDGER.md`, tell the agent.
+   Read your GPU quota/GPU type in the Kaggle web UI (Settings/account page)
+   and write the real numbers to `docs/GPU_LEDGER.md` before running.
+   Keep the Hugging Face cache OUTSIDE `/kaggle/working` (it counts toward
+   the output cap): `export HF_HOME=/kaggle/tmp/hf_cache`.
+2. Get the repo in: clone, or upload a zip containing ONLY code/configs/docs
+   (exclude `student_base/`, `exports/`, `runs/`, `.venv/` — too big and
+   unneeded remotely).
+3. HF token via the platform secret store, never in a file.
+   `bash scripts/setup_remote.sh` (GPU torch + lock + bitsandbytes).
+4. Run the `preflight` cell (notebook) or CLI first — it aborts BEFORE any
+   download on bad fingerprints/prompts. Then the cache cell with
+   `PROMPTS=data/processed/pilot_50.jsonl`. Rerunning resumes (finished and
+   rejected IDs skipped). Single GPU only.
+5. Two GPUs (e.g. Kaggle 2×T4): run ONE process per GPU with
+   `CUDA_VISIBLE_DEVICES=0/1` and DISJOINT `--shards` ranges writing to the
+   SAME output directory (shard files never collide).
+6. Download `data/teacher_cache/qwen-qwen3-8b/<sha>/` (shards + manifests +
+   rejected logs) into the repo path, record hours in `docs/GPU_LEDGER.md`,
+   tell the agent.
 6. Teacher: `Qwen/Qwen3-8B` NF4 + fp16 compute; fingerprint MUST equal
    `563a701b…` (the script aborts otherwise); non-thinking sampling
    T=0.7/p=0.8/k=20/minP=0 (model card); top-k=32 at T=1 over assistant

@@ -1,0 +1,15 @@
+# Real teacher entry (approved Stage 10.0). Pinned revision required.
+id: qwen-qwen3-8b
+revision: b968826d9c46dd6066d109eabc6255188de91218
+backend: hf_local
+tokenizer_id: Qwen/Qwen3-8B
+tokenizer_fingerprint: 563a701b87f87d8076a6faf47ea67cc1292b2321e25f18d09e2d11b6189140aa
+license: Apache-2.0
+tos_allows_distillation: true
+capabilities:
+  text: true
+  logprobs_topk: true
+  full_logits: false
+  hidden_states: false
+notes: 4-bit NF4 + fp16 compute on T4/P100 (no bf16). Non-thinking sampling
+  T=0.7/p=0.8/k=20/minP=0 per the model card. Never use revision "main".

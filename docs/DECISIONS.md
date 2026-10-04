@@ -192,3 +192,14 @@ Reason: A safety gate that false-positives on good teachers is worse than none �
 ## 2026-10-04 — Pilot = 50 prompts, stratified by category, then Ling runs it
 Decision: `pilot_50.jsonl` = 10 per category (persona/devops/security/general/tool_use), seed 7. The pilot measures: rejection rate per category, gen tok/s, scoring tok/s, VRAM peak, wall time → extrapolates the full run (3,000–4,000 prompts) for GPU budgeting.
 Reason: Never spend quota blind; the manifest carries every number needed for the extrapolation.
+
+## 2026-10-04 — Claude review fixes applied before the pilot (A+B+C verified)
+Decision: Applied an external code review of teacher_cache.py/RUNBOOK in full, after verifying each claim against the repo (all confirmed valid).
+A (quota/data-poisoning): truncated generations dropped with reason; think-leaks dropped; imports moved before any download + `preflight` subcommand (tokenizer-only, runs on laptop, notebook calls it first); teacher revision pinned to b968826d… (refused unless --force-revision; recorded in configs/teachers/qwen-qwen3-8b.yaml); device_map={"": 0} single-GPU (+CUDA_VISIBLE_DEVICES docs for 2 processes).
+B (bulk-run): crash-safe resume (truncated-tail repair, rejected-ID log, manifest counts from files); honest timing (sec/kept/category + rejected seconds); --shards range loop with one model load; scoring sliced to assistant rows + vectorized top-k + 4-decimal logprobs; all 6 small items (split check, crc32 seeds, prefix-unstable drops, select exact-n, tool_use verified_success, trailing-newline-after-im_end dropped by explicit rule).
+C (RUNBOOK): shard layout matches code; thresholds point at BASELINE0_v2 with intervals; quota via web UI; HF cache outside /kaggle/working + upload exclusions; two-GPU invocation.
+Reason: GPU quota is scarce; every one of these either wastes it or corrupts data silently. Reviewed-but-unverified claims were verified, not trusted.
+
+## 2026-10-04 — Trailing newline after final im_end is NOT trained
+Decision: score_topk drops a single template-added "\n" after the final <|im_end|> when the completion does not end with a newline. The model never generates that token; training it would teach nothing.
+Reason: Explicit per review; the alternative (keeping it) trains the model to predict template glue.
