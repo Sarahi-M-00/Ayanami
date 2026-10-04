@@ -149,3 +149,13 @@ Reason: Cost us a 3-hour hung run and a full debugging session (documented in ru
 ## 2026-10-04 — Q4_K_M fixed as the deployment format for the smoke line
 Decision: Q4_K_M (1.1 GB, 17.8 tok/s) preserves the merged BF16 behavior exactly on all 23 comparison prompts (2/3 identity hits including the same "Ling is my name" conflation quirk, correct math). Q8_0 (1.8 GB, 11.8 tok/s) adds nothing behaviorally here. BF16 reference: 2.39 tok/s.
 Reason: Evidence in runs/export_smoke/report.json. Q8_0 stays as the fidelity upper bound for future real (non-smoke) models; re-evaluate per model.
+
+## 2026-10-04 — Pingu Unchained rejected as teacher
+Decision: REJECTED without caching a single record. Verified facts: commercial product by Audn.AI (no public weights; API-only with waitlist, ID verification and per-token pricing). Reasons: (1) ToS unverified and almost certainly prohibitive for distillation (commercial API profile) — our Phase 4 gate refuses by default; (2) mission conflict — explicitly offensive/poisoned vs our defensive scope and harness safety model; (3) no logit compatibility (non-Qwen tokenizers) — text_sft only at API prices; (4) high identity-scrub burden (adversarial persona).
+Reason: Recorded so no future agent re-evaluates it from scratch.
+
+## 2026-10-04 — Qwen/Qwen3-8B (Instruct) proposed as first teacher (pending Ling)
+Decision: PROPOSED, not approved. Verified evidence (not memory): Apache 2.0 license (Hub API); tokenizer fingerprint 563a701b... computed from its downloaded tokenizer.json — byte-identical to the Student, unlocking real logit_kd; 8B fits a free Colab T4 in 4-bit for local logit generation; Instruct variant follows instructions/uses tools/reasons; its Qwen/Alibaba identity is already covered by the tested scrubber patterns.
+Acceptance gate before first cache: it must beat baseline-0 on the 80 domain cases + toolcall suite (score first, distill later).
+Alternatives: Qwen3-14B (needs P100/A100, same pipeline); non-Qwen open-weights (text_sft only, more scrubbing — acceptable if one proves dominant in our domains with verified ToS).
+Reason: Same family + permissive license + free-tier feasible + measurable gate.

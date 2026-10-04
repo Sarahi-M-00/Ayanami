@@ -41,4 +41,67 @@ Gotchas (all hit during Phase 8, all with evidence in run logs):
 - Q8_0: 68.0s, 11.79 tok/s
 - identity hits: {'bf16': {'identity_hits': 2, 'head_prompt0': '84 * 3 / 2 = 126.'}, 'Q4_K_M': {'identity_hits': 2, 'head_prompt0': '84 * 3 / 2 = 126\n\nThe final answer is:  \n**126**'}, 'Q8_0': {'identity_hits': 2, 'head_prompt0': '84 * 3 / 2 = 126.'}}
 
-(Phase 9 extends this file: setup, teachers, training, eval.)
+## Setup (laptop cpu_only)
+
+```bash
+git clone <repo> ayanami-distill && cd ayanami-distill
+# weights (pinned revision + SHA256 in configs/student.yaml):
+huggingface-cli download orlandorubino/Qwen3-1.7B-heretic --revision 433869992df66cd5ed9fa77491809448c3dac7a0 --local-dir student_base
+chmod -R a-w student_base
+# python 3.12 + stack (torch CPU build):
+uv python install 3.12 && uv venv --python 3.12 .venv
+.venv/bin/python -m ensurepip --upgrade
+.venv/bin/python -m pip install --no-cache-dir torch --index-url https://download.pytorch.org/whl/cpu
+.venv/bin/python -m pip install --no-cache-dir -r requirements.lock
+.venv/bin/python scripts/check_env.py
+```
+
+Remote GPU (`remote_gpu` branch): `bash scripts/setup_remote.sh`
+(GPU torch from PyPI + lock minus torch/nvidia lines), then `check_env.py`.
+
+## (a) Add a new teacher
+
+1. Verify license + distillation ToS **in writing**; record in `docs/DECISIONS.md`.
+2. Compute its tokenizer fingerprint (same method as `scripts/audit_student.py`
+   section 6) and compare with the student's
+   `563a701b87f87d8076a6faf47ea67cc1292b2321e25f18d09e2d11b6189140aa`.
+3. Write `configs/teachers/<id>.yaml` (see `configs/teachers/fake.yaml`).
+4. Score it on `src/ayanami_distill/eval/data/domain_*.jsonl` + trajectories
+   BEFORE caching anything (must beat baseline-0).
+5. Log the router decision: same fingerprint + logprobs -> `logit_kd`,
+   else `text_sft` (or `cross_tokenizer` if enabled).
+
+## (b) Generate and cache teacher data
+
+```bash
+# text_sft: generate completions -> normalize to Appendix-B records ->
+# scrub identity (teachers/scrub.py) -> validate (data/records.py) ->
+# append to data/teacher_cache/<teacher_id>/<revision>/records.jsonl
+# logit_kd: same + cache top-k (k=32, int32 ids + float16 logprobs + tail mass).
+# ALWAYS print teachers/cache.py estimate_topk_cache() disk estimate first.
+```
+
+## (c) Train in each mode
+
+```bash
+PYTHONPATH=src .venv/bin/python -m ayanami_distill.train --config configs/distill/text_sft.yaml [--run-dir runs/<run_id>]
+# logit_kd / cross_tokenizer / hidden_kd configs exist; their entry points
+# activate with their data (loss modules + tests already green).
+# Mix defaults: replay 0.2 + persona 0.2 (see configs + data/mix.py provenance).
+# Resume: set resume_from: checkpoint-N in the distill config.
+```
+
+## (d) Evaluate
+
+```bash
+PYTHONPATH=src .venv/bin/python -m ayanami_distill.eval.harness --out runs/<run_id>/eval.json
+# Compare against docs/BASELINE0.md thresholds (persona -0.05, injection zero-new-fail,
+# domain -0.05, PPL +10% max, lm-eval -0.03, toolcall non-decreasing).
+```
+
+## (e) Export
+
+See "Export: merge -> GGUF -> quant" chapter above (proven smoke path).
+For real models replace `exports/merged_smoke` with the validated run output
+and re-run `scripts/export_smoke.py` (paths are constants at its top).
+
