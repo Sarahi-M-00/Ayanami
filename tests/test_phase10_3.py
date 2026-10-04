@@ -190,3 +190,18 @@ def test_notebook_valid_json():
     assert nb["nbformat"] == 4
     src = "\n".join("".join(c["source"]) for c in nb["cells"] if c["cell_type"] == "code")
     assert "teacher_cache.py" in src and "SHARD" in src
+
+
+def test_colab_notebook_embeds_exact_pilot():
+    import json as _json
+    nb = _json.load(open(ROOT / "notebooks/colab_pilot.ipynb", encoding="utf-8"))
+    blob = None
+    for cell in nb["cells"]:
+        for line in cell.get("source", []):
+            if line.startswith("PILOT = "):
+                blob = line[len("PILOT = "):].strip()
+    assert blob, "PILOT payload missing"
+    found = _json.loads(blob)["lines"]
+    disk = [line.rstrip("\n") for line in
+            open(ROOT / "data/processed/pilot_50.jsonl", encoding="utf-8") if line.strip()]
+    assert found == disk and len(found) == 50
