@@ -175,3 +175,12 @@ Reason: Deterministic, auditable, and the checker (tested) enforces exclusion in
 ## 2026-10-04 — PPL-big is a separate anchor (FineWeb slice, windows)
 Decision: 60 lines (every 3rd of 180 FineWeb EN+ES docs, 48-token windows): PPL 40.553, bootstrap CI recorded. NOT comparable to PPL-38 (18.016, different text/length); both tracked. ODC-By attribution goes to DATA_SOURCES.md at 10.2 build time.
 Reason: Longer docs blow up CPU attention cost (~10 s/128tok); strided 48-token windows fit the 10-minute rule while widening coverage.
+
+## 2026-10-04 — Prompt pool v1: quality-first volume, shares deviate with reason
+Decision: 1,911 prompts (0 dups, 0 sealed overlaps, 0 invalid): authored identity/obedience/injection/tool/domain/commands + 400 EN FineWeb (streamed, ODC-By) + 100 hand ES lines. Shares deviate from Appendix B (tool 5% vs 18%, replay 26% vs 15%) because hand-curated tool tasks and domain Q&A do not scale like parameterized constraints; counts (not verifiers) get cut first, and the 10.3 pilot fixes final size (teacher paraphrase on GPU can rebalance in v2).
+Alternatives: Pad to 3,500 with thin paraphrases. Rejected: near-dup filter would either eat them (waste) or pass junk (harm); honest volume now, sized growth later.
+Reason: Acceptance requires a built/deduped/checked pool, not a number. Subcategory mixing keys on the `source` prefix (recorded for the 10.4 mixer).
+
+## 2026-10-04 — FineWeb streaming is flaky: direct-shard fallback + authored ES
+Decision: `datasets` streaming (hf_xet) crashed the interpreter twice with Bad-file-descriptor/GIL errors AFTER collecting data (files were written; crash at teardown). EN replay kept the 400 streamed docs; ES switched to 100 hand-written lines (deterministic, zero flakiness) after killing a runaway 1.8 GB shard download. ODC-By attribution recorded in DATA_SOURCES.md.
+Reason: Robustness over elegance; the ES slice needed 100 lines, not a 2 GB shard.

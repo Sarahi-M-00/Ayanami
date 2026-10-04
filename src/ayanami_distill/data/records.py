@@ -32,6 +32,61 @@ REQUIRED_FIELDS: dict[str, type | tuple[type, ...]] = {
     "created_at": str,
 }
 
+V1_1_OPTIONAL_FIELDS: dict[str, type | tuple[type, ...]] = {
+    "student_messages": list,
+    "verifier": (dict, type(None)),
+    "split": str,
+}
+
+SPLITS = {"train", "dev", "test"}
+
+
+def validate_v1_1_extras(rec: dict[str, Any]) -> list[str]:
+    """Type-check v1.1 optional fields when present. v1 records pass untouched."""
+    errors: list[str] = []
+    for name, want in V1_1_OPTIONAL_FIELDS.items():
+        if name in rec and not isinstance(rec[name], want):
+            errors.append(f"field {name!r} must be {want}")
+    if isinstance(rec.get("split"), str) and rec["split"] not in SPLITS:
+        errors.append(f"split {rec['split']!r} not in {sorted(SPLITS)}")
+    sm = rec.get("student_messages")
+    if isinstance(sm, list):
+        for i, m in enumerate(sm):
+            if not isinstance(m, dict) or m.get("role") not in ROLES \
+                    or not isinstance(m.get("content"), str):
+                errors.append(f"student_messages[{i}] must be {{role, content: str}}")
+    vf = rec.get("verifier")
+    if isinstance(vf, dict) and "name" not in vf:
+        errors.append("verifier must have a name")
+    return errors
+
+
+PROMPT_REQUIRED = ("id", "category", "lang", "messages", "student_messages",
+                   "verifier", "split", "source")
+
+
+def validate_prompt(p: dict[str, Any]) -> list[str]:
+    """Validate a v1.1 PROMPT pool entry (built in 10.2, no teacher output)."""
+    errors: list[str] = []
+    if not isinstance(p, dict):
+        return ["prompt is not a dict"]
+    for name in PROMPT_REQUIRED:
+        if name not in p:
+            errors.append(f"missing field: {name}")
+    if p.get("category") not in DOMAINS:
+        errors.append(f"category {p.get('category')!r} not in {sorted(DOMAINS)}")
+    if p.get("lang") not in ("en", "es"):
+        errors.append(f"lang {p.get('lang')!r} not in ['en', 'es']")
+    for key in ("messages", "student_messages"):
+        msgs = p.get(key)
+        if isinstance(msgs, list):
+            for i, m in enumerate(msgs):
+                if not isinstance(m, dict) or m.get("role") not in ROLES \
+                        or not isinstance(m.get("content"), str):
+                    errors.append(f"{key}[{i}] must be {{role, content: str}}")
+    errors.extend(validate_v1_1_extras(p))
+    return errors
+
 
 def validate_record(rec: dict[str, Any]) -> list[str]:
     """Return a list of validation errors; empty means valid."""
@@ -43,6 +98,7 @@ def validate_record(rec: dict[str, Any]) -> list[str]:
             errors.append(f"missing field: {name}")
         elif not isinstance(rec[name], want):
             errors.append(f"field {name!r} must be {want}, got {type(rec[name]).__name__}")
+    errors.extend(validate_v1_1_extras(rec))
     if rec.get("domain") not in DOMAINS:
         errors.append(f"domain {rec.get('domain')!r} not in {sorted(DOMAINS)}")
     messages = rec.get("messages")
