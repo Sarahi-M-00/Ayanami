@@ -184,3 +184,11 @@ Reason: Acceptance requires a built/deduped/checked pool, not a number. Subcateg
 ## 2026-10-04 — FineWeb streaming is flaky: direct-shard fallback + authored ES
 Decision: `datasets` streaming (hf_xet) crashed the interpreter twice with Bad-file-descriptor/GIL errors AFTER collecting data (files were written; crash at teardown). EN replay kept the 400 streamed docs; ES switched to 100 hand-written lines (deterministic, zero flakiness) after killing a runaway 1.8 GB shard download. ODC-By attribution recorded in DATA_SOURCES.md.
 Reason: Robustness over elegance; the ES slice needed 100 lines, not a 2 GB shard.
+
+## 2026-10-04 — Teacher fingerprint MUST use the audit method (get_vocab lies)
+Decision: `fingerprint_of_tokenizer()` saves the tokenizer and hashes the file (Phase 1 method). An initial version used `get_vocab()` and produced a DIFFERENT hash for the same tokenizer (51e63d0d… vs canonical 563a701b…), which would have aborted every real teacher run at the gate. Caught by unit test; fixed + regression-tested.
+Reason: A safety gate that false-positives on good teachers is worse than none — it would have silently blocked logit_kd forever.
+
+## 2026-10-04 — Pilot = 50 prompts, stratified by category, then Ling runs it
+Decision: `pilot_50.jsonl` = 10 per category (persona/devops/security/general/tool_use), seed 7. The pilot measures: rejection rate per category, gen tok/s, scoring tok/s, VRAM peak, wall time → extrapolates the full run (3,000–4,000 prompts) for GPU budgeting.
+Reason: Never spend quota blind; the manifest carries every number needed for the extrapolation.

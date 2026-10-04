@@ -99,6 +99,24 @@ PYTHONPATH=src .venv/bin/python -m ayanami_distill.eval.harness --out runs/<run_
 # domain -0.05, PPL +10% max, lm-eval -0.03, toolcall non-decreasing).
 ```
 
+## Remote teacher run (LING ACTION, Stage 10.3+)
+
+1. Kaggle notebook, GPU on, **Internet ON** (one-time teacher download).
+   Check quota/GPU in your account first (`kaggle quota`); write real numbers
+   to `docs/GPU_LEDGER.md` before running.
+2. Get the repo in: clone, or upload the zip. HF token via the platform
+   secret store, never in a file.
+3. `bash scripts/setup_remote.sh` (GPU torch + lock + bitsandbytes).
+4. Pilot (50 prompts): run `notebooks/teacher_cache.ipynb` with
+   `PROMPTS=data/processed/pilot_50.jsonl`, or the same CLI from 10.3 docs.
+   Rerunning resumes (finished IDs skipped). Single GPU only.
+5. Download `data/teacher_cache/qwen-qwen3-8b/` (shards + manifests) into
+   the repo path, record hours in `docs/GPU_LEDGER.md`, tell the agent.
+6. Teacher: `Qwen/Qwen3-8B` NF4 + fp16 compute; fingerprint MUST equal
+   `563a701b…` (the script aborts otherwise); non-thinking sampling
+   T=0.7/p=0.8/k=20/minP=0 (model card); top-k=32 at T=1 over assistant
+   tokens only; rejection sampling with per-category rates in the manifest.
+
 ## (e) Export
 
 See "Export: merge -> GGUF -> quant" chapter above (proven smoke path).

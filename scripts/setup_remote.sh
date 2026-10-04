@@ -29,6 +29,8 @@ echo "[setup_remote] installing GPU torch from PyPI (default CUDA build)"
 echo "[setup_remote] installing pinned stack (excluding laptop CPU-torch lines)"
 grep -viE '^(torch|nvidia-|triton)[=<>]' requirements.lock > /tmp/ayanami_remote_reqs.txt || true
 .venv/bin/python -m pip install --no-cache-dir -r /tmp/ayanami_remote_reqs.txt
+echo "[setup_remote] installing bitsandbytes (CUDA-only, needed for 4-bit teacher)"
+.venv/bin/python -m pip install --no-cache-dir bitsandbytes
 
 echo "[setup_remote] verifying"
 .venv/bin/python scripts/check_env.py
