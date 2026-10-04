@@ -31,7 +31,11 @@ Status legend: `[ ]` open, `[x]` confirmed by Ling (date + choice recorded).
   default; distilling `<think>` traces is a later, separately-evaluated
   experiment (proposal logged for Phase 10.8).
 
-## Item 3 — Compute plan: [x] CONFIRMED 2026-10-04 — Kaggle first, Colab overflow, fp16 Kaggle first, Colab free as overflow, single GPU
+## Item 3 — Compute plan: CHANGED 2026-10-04 — Colab first, Kaggle overflow, fp16
+(Ling: Kaggle GPUs unavailable for days. Colab free T4 does NOT guarantee
+allocation either — this adds a second door, not a solution. Try both, take
+whatever grants GPU first. Notebook + RUNBOOK updated: Drive persistence,
+Colab Secrets, nvidia-smi check, small shard ranges.) Kaggle first, Colab free as overflow, single GPU
 
 - [x] Confirmed by Ling 2026-10-04.
 - Verified 2026-10-04 (public sources, floats — Ling verifies in-account):

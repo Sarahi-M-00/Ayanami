@@ -109,14 +109,20 @@ PYTHONPATH=src .venv/bin/python -m ayanami_distill.eval.harness --out runs/<run_
 
 ## Remote teacher run (LING ACTION, Stage 10.3+)
 
-1. Kaggle notebook, GPU on, **Internet ON** (one-time teacher download).
-   Read your GPU quota/GPU type in the Kaggle web UI (Settings/account page)
-   and write the real numbers to `docs/GPU_LEDGER.md` before running.
-   Keep the Hugging Face cache OUTSIDE `/kaggle/working` (it counts toward
-   the output cap): `export HF_HOME=/kaggle/tmp/hf_cache`.
-2. Get the repo in: clone, or upload a zip containing ONLY code/configs/docs
-   (exclude `student_base/`, `exports/`, `runs/`, `.venv/` — too big and
-   unneeded remotely).
+1. Colab notebook (changed 2026-10-04: Kaggle GPUs unavailable for days;
+   Kaggle stays as overflow). Runtime → Change runtime type → **T4 GPU**.
+   Free tier: 12 h sessions max, idle disconnects (~90 min), allocation NOT
+   guaranteed — if no GPU is offered, wait and retry off-peak. There is no
+   published quota: track hours manually in `docs/GPU_LEDGER.md`.
+   Colab VMs are EPHEMERAL: mount Drive first and point all outputs there,
+   or download everything before disconnect.
+   Keep the Hugging Face cache OUTSIDE the repo: `%env HF_HOME=/tmp/hf_cache`.
+2. Get the repo in: `!git clone https://github.com/Sarahi-M-00/Ayanami.git`
+   (or upload a zip with ONLY code/configs/docs — exclude `student_base/`,
+   `exports/`, `runs/`, `.venv/`). Upload `data/processed/pilot_50.jsonl`
+   (or the bulk prompt file) to its repo path — `data/` is gitignored, so
+   the clone does NOT include it.
+   First cell sanity: `!nvidia-smi` (expect T4, 16 GB) — fp16 path assumed.
 3. HF token via the platform secret store, never in a file.
    `bash scripts/setup_remote.sh` (GPU torch + lock + bitsandbytes).
 4. Run the `preflight` cell (notebook) or CLI first — it aborts BEFORE any
@@ -126,9 +132,11 @@ PYTHONPATH=src .venv/bin/python -m ayanami_distill.eval.harness --out runs/<run_
 5. Two GPUs (e.g. Kaggle 2×T4): run ONE process per GPU with
    `CUDA_VISIBLE_DEVICES=0/1` and DISJOINT `--shards` ranges writing to the
    SAME output directory (shard files never collide).
-6. Download `data/teacher_cache/qwen-qwen3-8b/<sha>/` (shards + manifests +
-   rejected logs) into the repo path, record hours in `docs/GPU_LEDGER.md`,
-   tell the agent.
+6. BEFORE disconnect: copy `data/teacher_cache/qwen-qwen3-8b/<sha>/`
+   (shards + manifests + rejected logs) to Drive or download it. On the
+   laptop place it under the same repo path, record hours in
+   `docs/GPU_LEDGER.md`, tell the agent. Reruns resume from finished IDs —
+   small shard ranges per session survive the 12 h cap and idle kills.
 6. Teacher: `Qwen/Qwen3-8B` NF4 + fp16 compute; fingerprint MUST equal
    `563a701b…` (the script aborts otherwise); non-thinking sampling
    T=0.7/p=0.8/k=20/minP=0 (model card); top-k=32 at T=1 over assistant

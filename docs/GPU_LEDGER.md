@@ -6,3 +6,4 @@ more, stop at the gate and say so. No GPU used yet.
 | date | platform | GPU | hours | what ran | result |
 |---|---|---|---|---|---|
 | — | — | — | 0 | — | ledger opened 2026-10-04, no usage yet |
+| 2026-10-04 | (none) | — | 0 | plan switched to Colab-first (Kaggle GPU drought); notebook+RUNBOOK updated | — |
