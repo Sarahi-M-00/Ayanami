@@ -57,7 +57,8 @@ def test_fake_score_replays_stored_topk():
     t.generate([{"role": "user", "content": "a"}], {})
     t.generate([{"role": "user", "content": "b"}], {})  # serves fake-0002
     topk = t.score([{"role": "user", "content": "b"}], "whatever")
-    assert topk["k"] == 4 and len(topk["ids"]) == 4
+    assert topk["k"] == 4 and len(topk["ids"]) == 2
+    assert all(len(row) == 4 for row in topk["ids"])
     t.close()
 
 
@@ -112,9 +113,11 @@ def test_schema_rejects_missing_field_bad_domain_bad_role():
     assert any("domain" in e for e in validate_record(bad2))
     bad3 = dict(good, messages=[{"role": "hacker", "content": "x"}])
     assert any("messages[0]" in e for e in validate_record(bad3))
-    bad4 = dict(good, logprobs_topk={"k": 2, "ids": [1], "logprobs": [0.0, -1.0],
-                                     "tail_mass": 0.0})
-    assert any("length k" in e for e in validate_record(bad4))
+    bad4 = dict(good, logprobs_topk={"k": 2, "positions": [5, 6],
+                                     "ids": [[1, 2], [3]],
+                                     "logprobs": [[0.0, -1.0], [0.0, -1.0]],
+                                     "tail_mass": [0.0, 0.0]})
+    assert any("k ints" in e for e in validate_record(bad4))
 
 
 # ---- scrubber ----

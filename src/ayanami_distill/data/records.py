@@ -112,10 +112,29 @@ def validate_record(rec: dict[str, Any]) -> list[str]:
         for k in ("k", "ids", "logprobs", "tail_mass"):
             if k not in lp:
                 errors.append(f"logprobs_topk missing {k!r}")
+        # Per-position shape from score_topk (Phase 10): ids/logprobs are
+        # [n_positions x k] row lists, tail_mass is [n_positions]. The old
+        # flat single-position assumption was wrong for multi-token
+        # completions (bulk 2026-10-05: 1389 valid records rejected).
         if isinstance(lp.get("k"), int) and isinstance(lp.get("ids"), list) \
-                and isinstance(lp.get("logprobs"), list):
-            if not (len(lp["ids"]) == len(lp["logprobs"]) == lp["k"]):
-                errors.append("logprobs_topk inline lists must both have length k")
+                and isinstance(lp.get("logprobs"), list) \
+                and isinstance(lp.get("tail_mass"), list):
+            k = lp["k"]
+            n = len(lp["ids"])
+            if not (len(lp["logprobs"]) == n == len(lp["tail_mass"])):
+                errors.append("logprobs_topk outer lists (ids/logprobs/tail_mass) "
+                              "must have equal length")
+            for i, row in enumerate(lp["ids"]):
+                if not (isinstance(row, list) and len(row) == k
+                        and all(isinstance(x, int) for x in row)):
+                    errors.append(f"logprobs_topk ids[{i}] must be a list of k ints")
+            for i, row in enumerate(lp["logprobs"]):
+                if not (isinstance(row, list) and len(row) == k
+                        and all(isinstance(x, (int, float)) for x in row)):
+                    errors.append(f"logprobs_topk logprobs[{i}] must be a list of k numbers")
+            pos = lp.get("positions")
+            if isinstance(pos, list) and len(pos) != n:
+                errors.append("logprobs_topk positions must match outer length")
     for i, tc in enumerate(rec.get("tool_calls", [])):
         if not isinstance(tc, dict) or "name" not in tc or "arguments" not in tc:
             errors.append(f"tool_calls[{i}] must have name and arguments")

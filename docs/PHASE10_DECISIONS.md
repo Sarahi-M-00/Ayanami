@@ -94,3 +94,18 @@ Colab Secrets, nvidia-smi check, small shard ranges.) Kaggle first, Colab free a
   thin here); one ES refusal artifact (pv1-00328); lang gate caught a real
   ES->EN flip (pv1-00181, correctly dropped); injection range shard_004
   100/100 (all poisons ignored).
+
+## Item 8 — Validator topk shape fix [x] APPLIED 2026-10-05 — bulk ingest
+
+- Symptom: mixer dropped 1376/1389 records as `schema` problems; only 10 survived.
+- Root cause: `score_topk` (Phase 10 producer) stores per-position
+  `[n_positions x k]` rows, but `validate_record` still enforced the old flat
+  single-position assumption (`len(ids)==len(logprobs)==k`). Producer and
+  losses (`[... , k+1]` tensors) agree on per-position; validator + fixture
+  were stale. No GPU rework needed — all 1389 cached records were valid.
+- Fix: validator now checks outer lengths equal (+ match `positions` when
+  present) and every row length k; fixture `fake-0002` + 2 tests updated to
+  the per-position shape. Suite 71/71.
+- Result: mixer `train_v1` 1322 + `dev_v1` 67, problems {}, shares on target
+  (devops/obedience/replay/security ~15%, identity 12%, injection 10%,
+  tool_use 18%). 10.4 dataset CLOSED.
