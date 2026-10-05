@@ -13,7 +13,7 @@ from pathlib import Path
 
 import yaml
 
-from .trainer import ROOT, train_text_sft
+from .trainer import ROOT, train_logit_kd, train_text_sft
 
 
 def parse_args(argv=None):
@@ -26,17 +26,20 @@ def parse_args(argv=None):
 def main(argv=None) -> int:
     args = parse_args(argv)
     cfg = yaml.safe_load(open(args.config, encoding="utf-8"))
-    if cfg.get("mode") != "text_sft":
-        print(f"mode {cfg.get('mode')!r}: training entry point not implemented in Phase 5 "
-              f"(config + loss module exist; entry point arrives with its data)",
-              file=sys.stderr)
+    mode = cfg.get("mode")
+    if mode == "text_sft":
+        train_fn = train_text_sft
+    elif mode == "logit_kd":
+        train_fn = train_logit_kd
+    else:
+        print(f"mode {mode!r}: unknown training mode", file=sys.stderr)
         return 2
     run_dir = Path(args.run_dir or
                    ("runs/" + datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
                     + "_" + cfg["mode"]))
     if not run_dir.is_absolute():
         run_dir = ROOT / run_dir
-    summary = train_text_sft(cfg, run_dir)
+    summary = train_fn(cfg, run_dir)
     print(f"done: {run_dir} {summary}")
     return 0
 

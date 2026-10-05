@@ -1,0 +1,23 @@
+# Run B (Phase 10.5) — logit KD on cached top-32. Same tokenizer REQUIRED
+# (student fp == teacher fp 563a701b…, verified 2026-10-05).
+mode: logit_kd
+model: student_base
+lora: configs/lora.yaml
+seed: 7
+kd:
+  alpha: 0.5
+  temperature: 2.0
+  divergence: forward
+  topk: 32
+data:
+  teacher_data: data/processed/train_v1.jsonl
+  eval_data: data/processed/dev_v1.jsonl
+eval:
+  track_drift: true
+  eval_every_steps: 100
+train:
+  max_steps: 1000
+  checkpoint_every_steps: 200
+  max_seq_len: 2048
+output_dir: runs/phase10_logit_kd
+resume_from: null

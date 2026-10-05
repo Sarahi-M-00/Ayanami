@@ -109,3 +109,27 @@ Colab Secrets, nvidia-smi check, small shard ranges.) Kaggle first, Colab free a
 - Result: mixer `train_v1` 1322 + `dev_v1` 67, problems {}, shares on target
   (devops/obedience/replay/security ~15%, identity 12%, injection 10%,
   tool_use 18%). 10.4 dataset CLOSED.
+
+## Item 9 — 10.5 training setup [x] READY 2026-10-05 — pending GPU session
+
+- Same-tokenizer gate: student fp == teacher fp `563a701b…` (audit-identical
+  method). The raw `vocab_size` attr noise (151643 vs 151936) is HF object
+  accounting, not a real difference; renders byte-identical. Run B VALID.
+- Trainer gaps closed (laptop-side): `sft_messages_from_record` (completion
+  -> assistant turn; SFT keeps student_messages bare/half curriculum),
+  new `train_logit_kd` (alpha*CE + (1-alpha)*T^2*KL, micro-batch 1, resume +
+  checkpoints mirror text path), `__main__` dispatches both modes.
+- KD alignment fix that mattered: encode_kd_example uses FULL teacher
+  context (rec["messages"]) because score_topk indexed that rendering;
+  bare student views shift positions (281/1322 would have misaligned).
+  Result: KD usable 1322/1322, skipped 0.
+- Run A and Run B share dev_v1 as eval set (text path gained eval_data).
+- Configs: `phase10_text_sft.yaml` / `phase10_logit_kd.yaml` (1000 steps,
+  ckpt 200, seed 7). Notebook: `notebooks/colab_train.ipynb` (student pinned
+  to upstream_sha, fingerprint STOP GATE cell, Drive OUT).
+- Validation: CPU 2-step smoke too slow on laptop (1.7B bf16 bwd, swap
+  pressure) — init_eval OK (3.88), loop math covered by shape/backward unit
+  tests. First real steps happen on T4; watch first 100 steps before leaving.
+- Student license re-verified: orlandorubino/Qwen3-1.7B-heretic is
+  Apache-2.0 (abliterated Qwen3-1.7B; no learned refusals — safety stays
+  scope-based per project spec).

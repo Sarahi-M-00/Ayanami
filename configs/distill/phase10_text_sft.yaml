@@ -1,0 +1,20 @@
+# Run A (Phase 10.5) — text SFT on the v1 dataset. Teacher text only, no logits.
+mode: text_sft
+model: student_base
+lora: configs/lora.yaml
+seed: 7
+data:
+  teacher_data: data/processed/train_v1.jsonl
+  persona_data: null
+  replay_data: null
+  max_train_examples: null
+eval:
+  heldout_general: null
+  track_drift: true
+  eval_every_steps: 100
+train:
+  max_steps: 1000
+  checkpoint_every_steps: 200
+  max_seq_len: 2048
+output_dir: runs/phase10_text_sft
+resume_from: null

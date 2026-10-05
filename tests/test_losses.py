@@ -141,3 +141,37 @@ def test_hidden_kd_shapes_and_kinds():
     assert n_params == 16 * 12 + 12
     with __import__("pytest").raises(ValueError):
         HK.hidden_kd_loss(s, t, proj, kind="nope")
+
+
+# ---- Phase 10.5: KD step gather math (mirrors trainer.kd_step ops) ----
+def test_kd_step_gather_shapes():
+    import torch
+    import torch.nn.functional as F
+    from ayanami_distill.losses.logit_kd import (
+        DIVERGENCES, student_topk_dist, teacher_topk_dist)
+    from ayanami_distill.losses.text_sft import IGNORE_INDEX
+    torch.manual_seed(7)
+    B, S, V, P, K, T = 1, 12, 50, 5, 4, 2.0
+    out = torch.randn(B, S, V, requires_grad=True)
+    pos = torch.tensor([[3, 5, 6, 8, 10]])
+    labels = torch.full((B, S), IGNORE_INDEX, dtype=torch.long)
+    labels[0, [4, 6, 7, 9, 11]] = torch.tensor([1, 2, 3, 4, 5])
+    tids = torch.randint(0, V, (B, P, K))
+    tlp = torch.randn(B, P, K)
+    ttail = torch.rand(B, P) + 0.01
+    idx = (pos - 1).unsqueeze(-1).expand(-1, -1, V)
+    prev = torch.gather(out, 1, idx)
+    assert prev.shape == (B, P, V)
+    tgt = torch.gather(labels, 1, pos)
+    keep = tgt != IGNORE_INDEX
+    ce = F.cross_entropy(prev[keep], tgt[keep])
+    assert ce.item() > 0
+    t = teacher_topk_dist(tlp, ttail, T)
+    s = student_topk_dist(prev, tids, T)
+    assert t.shape == s.shape == (B, P, K + 1)
+    for name in ("forward", "reverse", "jsd"):
+        kd = DIVERGENCES[name](t, s).mean()
+        assert torch.isfinite(kd)
+    loss = 0.5 * ce + 0.5 * (T ** 2) * DIVERGENCES["forward"](t, s).mean()
+    loss.backward()
+    assert torch.isfinite(out.grad).all()
