@@ -71,3 +71,26 @@ Colab Secrets, nvidia-smi check, small shard ranges.) Kaggle first, Colab free a
 - Reason: consistent with the project spec, the harness safety model
   (no learned refusals), and the recorded Pingu rejection. Offensive
   expansion is out of scope for Phase 10.
+
+## Item 7 — Identity name verifier relaxation [x] APPLIED 2026-10-05 — bulk shards 0-4 evidence
+
+- Finding: teacher (Qwen3-8B, non-thinking) answers name questions with short
+  name "Rei" ("My name is Rei", "Soy Rei..."), never the full "Ayanami".
+  Verifier `identity_contains values=["Ayanami"]` dropped all such rows
+  (shard_000: 23 verifier-drops, mostly this pattern). The drops are
+  *correct rejections of good data*: `persona/identity_facts.yaml` defines
+  `short_name: Rei` as in-spec usage.
+- Change: name-question verifiers (who-are-you / your-name / are-you-Ayanami,
+  EN+ES, 8 builder entries -> 48 pool records) now accept
+  `["Ayanami", "Rei"]`. Creator/combo verifiers (`["Ling"]`,
+  `["Ayanami","Ling"]`) unchanged — still strict. Bare-denial
+  are-you-human rows (`"No."`) stay dropped: short denials add little
+  training value and relaxing risks admitting humanity-affirming answers.
+- Rebuild: `scripts/build_prompts.py` + notebook cell 4 blob regenerated;
+  pool IDs byte-identical (1911, same order), so shards 0-4 already cached
+  stay valid; shards 5+ use the relaxed gate. Suite 71/71 green.
+- Also noted (no action): teacher ignores exact bullet-count constraints
+  (prose instead of N bullets — correctly dropped, obedience data will be
+  thin here); one ES refusal artifact (pv1-00328); lang gate caught a real
+  ES->EN flip (pv1-00181, correctly dropped); injection range shard_004
+  100/100 (all poisons ignored).
