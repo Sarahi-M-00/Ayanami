@@ -106,6 +106,19 @@ def load_training_state(path: Path, optimizer, scheduler) -> int:
     return int(state["step"])
 
 
+def _move_optimizer_to_model(optimizer, model) -> None:
+    """Move optimizer state tensors onto the model device.
+
+    Needed when resuming a checkpoint saved on another device (e.g. a CPU
+    run resumed on GPU) — otherwise the first step fails on device mismatch.
+    """
+    dev = next(model.parameters()).device
+    for st in optimizer.state.values():
+        for k, v in list(st.items()):
+            if torch.is_tensor(v) and v.device != dev:
+                st[k] = v.to(dev)
+
+
 def save_checkpoint(run_dir: Path, step: int, model, optimizer, scheduler) -> Path:
     ckpt = run_dir / f"checkpoint-{step}"
     model.save_pretrained(ckpt / "adapter")
@@ -115,11 +128,13 @@ def save_checkpoint(run_dir: Path, step: int, model, optimizer, scheduler) -> Pa
 
 def evaluate(model, tokenizer, examples: list[dict], batch_size: int = 2) -> dict[str, float]:
     model.eval()
+    device = next(model.parameters()).device
     total, count = 0.0, 0
     pad_id = tokenizer.pad_token_id
     with torch.no_grad():
         for i in range(0, len(examples), batch_size):
             batch = collate(examples[i:i + batch_size], pad_id)
+            batch = {k: v.to(device) for k, v in batch.items()}
             logits = model(input_ids=batch["input_ids"],
                            attention_mask=batch["attention_mask"]).logits
             shift_l = logits[:, :-1].reshape(-1, logits.size(-1))
@@ -157,8 +172,10 @@ def train_text_sft(cfg: dict, run_dir: Path) -> dict[str, Any]:
         lora_dropout=float(lora_cfg["dropout"]),
         target_modules=list(lora_cfg["target_modules"]),
         task_type=TaskType.CAUSAL_LM))
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    model.to(device)
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"trainable LoRA params: {trainable:,}", flush=True)
+    print(f"trainable LoRA params: {trainable:,} on {device}", flush=True)
 
     data_cfg, train_cfg = cfg["data"], cfg["train"]
     teacher_items = load_jsonl(ROOT / data_cfg["teacher_data"],
@@ -224,7 +241,9 @@ def train_text_sft(cfg: dict, run_dir: Path) -> dict[str, Any]:
         src = src if src.exists() else ckpts[-1]
         from peft import PeftModel  # local import: only needed on resume
         model = PeftModel.from_pretrained(base_model, src / "adapter")
+        model.to(device)
         start_step = load_training_state(src / "training_state.pt", opt, sched)
+        _move_optimizer_to_model(opt, model)
         start_epoch_pos = start_step * bs * accum
         print(f"resumed from {src} at step {start_step}", flush=True)
 
@@ -265,6 +284,7 @@ def train_text_sft(cfg: dict, run_dir: Path) -> dict[str, Any]:
         acc_loss = 0.0
         for a in range(accum):
             batch = collate(chunk[a * bs:(a + 1) * bs], tok.pad_token_id)
+            batch = {k: v.to(device) for k, v in batch.items()}
             out = model(input_ids=batch["input_ids"],
                         attention_mask=batch["attention_mask"],
                         labels=batch["labels"])
@@ -374,8 +394,9 @@ def train_logit_kd(cfg: dict, run_dir: Path) -> dict[str, Any]:
         lora_dropout=float(lora_cfg["dropout"]),
         target_modules=list(lora_cfg["target_modules"]),
         task_type=TaskType.CAUSAL_LM))
+    model.to(device)
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
-    print(f"trainable LoRA params: {trainable:,}", flush=True)
+    print(f"trainable LoRA params: {trainable:,} on {device}", flush=True)
 
     data_cfg, train_cfg, kd_cfg = cfg["data"], cfg["train"], cfg.get("kd", {})
     alpha = float(kd_cfg.get("alpha", 0.5))
@@ -434,7 +455,9 @@ def train_logit_kd(cfg: dict, run_dir: Path) -> dict[str, Any]:
         src = src if src.exists() else ckpts[-1]
         from peft import PeftModel  # local import: only needed on resume
         model = PeftModel.from_pretrained(base_model, src / "adapter")
+        model.to(device)
         start_step = load_training_state(src / "training_state.pt", opt, sched)
+        _move_optimizer_to_model(opt, model)
         start_pos = start_step * accum
         print(f"resumed from {src} at step {start_step}", flush=True)
 
