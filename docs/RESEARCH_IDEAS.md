@@ -21,3 +21,16 @@ Ideas worth pursuing later, ordered by dependency. None are Phase 10 work.
 - **Constraints on revisit:** teachers must be Apache-2.0/MIT verified
   (license recorded with fingerprint, as with Qwen3-8B); defensive +
   authorized-scope only, unchanged.
+
+## R-02 — v2 multi-teacher text KD [PARKED — after 10.6]
+
+- Candidates (verified 2026-10-08):
+  - `deepseek-ai/DeepSeek-R1-Distill-Qwen-7B` — MIT, reasoning-distilled,
+    7B fits T4. Tokenizer fp `6b47a24b…` != ours (`563a701b…`) → TEXT ONLY
+    (logits need R-01). Revision pin + fingerprint at activation time.
+  - `Qwen/Qwen2.5-Coder-7B` — Apache-2.0 (verify at activation), DevOps
+    specialist. Tokenizer check pending.
+- Policy: one teacher at a time through the same pipeline (pool -> cache ->
+  verifiers -> mixer); license + fingerprint recorded per teacher like Qwen3-8B.
+- REJECTED as teachers: Grok (ToS bans training), Claude (ToS bans training).
+  Their outputs are reference-only, never training data.
