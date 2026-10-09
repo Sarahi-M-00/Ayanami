@@ -1,0 +1,3 @@
+[submodule "llamita.cpp"]
+	path = llamita.cpp
+	url = https://github.com/ggerganov/llama.cpp
