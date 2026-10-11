@@ -123,6 +123,15 @@ def save_checkpoint(run_dir: Path, step: int, model, optimizer, scheduler) -> Pa
     ckpt = run_dir / f"checkpoint-{step}"
     model.save_pretrained(ckpt / "adapter")
     save_training_state(ckpt / "training_state.pt", optimizer, scheduler, step)
+    outbox = os.environ.get("AYANAMI_OUTBOX")
+    if outbox:
+        import shutil
+        dest = Path(outbox) / run_dir.name / f"checkpoint-{step}"
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        if dest.exists():
+            shutil.rmtree(dest)
+        shutil.copytree(ckpt, dest)
+        print(f"outbox sync: {ckpt} -> {dest}", flush=True)
     return ckpt
 
 
