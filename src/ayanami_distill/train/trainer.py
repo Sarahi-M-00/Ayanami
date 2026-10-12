@@ -159,6 +159,17 @@ def evaluate(model, tokenizer, examples: list[dict], batch_size: int = 2) -> dic
     return {"eval_loss": avg, "eval_ppl": math.exp(min(avg, 20.0))}
 
 
+def _load_base_model(cfg: dict, lora_cfg: dict):
+    """Fresh non-PEFT base model (call again before PeftModel.from_pretrained
+    on resume — wrapping an already-wrapped model stacks duplicate adapters)."""
+    base_model = AutoModelForCausalLM.from_pretrained(
+        str(ROOT / cfg["model"]), dtype=torch.bfloat16, local_files_only=True)
+    if lora_cfg.get("gradient_checkpointing"):
+        base_model.gradient_checkpointing_enable()
+        base_model.config.use_cache = False
+    return base_model
+
+
 def train_text_sft(cfg: dict, run_dir: Path) -> dict[str, Any]:
     cfg = dict(cfg)
     lora_cfg = yaml.safe_load(open(ROOT / cfg["lora"], encoding="utf-8"))
@@ -171,11 +182,7 @@ def train_text_sft(cfg: dict, run_dir: Path) -> dict[str, Any]:
     tok = AutoTokenizer.from_pretrained(str(ROOT / cfg["model"]), local_files_only=True)
     if tok.pad_token_id is None:
         tok.pad_token = tok.eos_token
-    base_model = AutoModelForCausalLM.from_pretrained(
-        str(ROOT / cfg["model"]), dtype=torch.bfloat16, local_files_only=True)
-    if lora_cfg.get("gradient_checkpointing"):
-        base_model.gradient_checkpointing_enable()
-        base_model.config.use_cache = False
+    base_model = _load_base_model(cfg, lora_cfg)
     model = get_peft_model(base_model, LoraConfig(
         r=int(lora_cfg["r"]), lora_alpha=int(lora_cfg["alpha"]),
         lora_dropout=float(lora_cfg["dropout"]),
@@ -255,6 +262,7 @@ def train_text_sft(cfg: dict, run_dir: Path) -> dict[str, Any]:
             raise FileNotFoundError(f"nothing to resume from: {resume}")
         src = src if src.exists() else ckpts[-1]
         from peft import PeftModel  # local import: only needed on resume
+        base_model = _load_base_model(cfg, lora_cfg)  # fresh base: no stacked adapters
         model = PeftModel.from_pretrained(base_model, src / "adapter")
         model.to(device)
         start_step = load_training_state(src / "training_state.pt", opt, sched)
@@ -399,11 +407,7 @@ def train_logit_kd(cfg: dict, run_dir: Path) -> dict[str, Any]:
     tok = AutoTokenizer.from_pretrained(str(ROOT / cfg["model"]), local_files_only=True)
     if tok.pad_token_id is None:
         tok.pad_token = tok.eos_token
-    base_model = AutoModelForCausalLM.from_pretrained(
-        str(ROOT / cfg["model"]), dtype=torch.bfloat16, local_files_only=True)
-    if lora_cfg.get("gradient_checkpointing"):
-        base_model.gradient_checkpointing_enable()
-        base_model.config.use_cache = False
+    base_model = _load_base_model(cfg, lora_cfg)
     model = get_peft_model(base_model, LoraConfig(
         r=int(lora_cfg["r"]), lora_alpha=int(lora_cfg["alpha"]),
         lora_dropout=float(lora_cfg["dropout"]),
@@ -475,6 +479,7 @@ def train_logit_kd(cfg: dict, run_dir: Path) -> dict[str, Any]:
             raise FileNotFoundError(f"nothing to resume from: {resume}")
         src = src if src.exists() else ckpts[-1]
         from peft import PeftModel  # local import: only needed on resume
+        base_model = _load_base_model(cfg, lora_cfg)  # fresh base: no stacked adapters
         model = PeftModel.from_pretrained(base_model, src / "adapter")
         model.to(device)
         start_step = load_training_state(src / "training_state.pt", opt, sched)
