@@ -13,11 +13,11 @@ reinstall exactly these versions from local mirrors.
 
 ## Offline mirror checklist (do once, store on external disk)
 
-- [ ] `npm pack rea-agents@6.4.0` tarball
-- [ ] Ghidra release zip (github.com/NationalSecurityAgency/ghidra, matching version)
-- [ ] jadx release zip (github.com/skylot/jadx)
-- [ ] frida-tools wheel + frida wheel (pip download)
-- [ ] This file + `shot`-style setup notes
+- [x] `npm pack rea-agents@6.4.0` tarball (in /home/ling/reserva/rea/)
+- [x] Ghidra/JDK/jadx pacman pkgs (from /var/cache/pacman/pkg/, in /home/ling/reserva/rea/)
+- [x] jadx (same pacman cache copy)
+- [x] frida-tools + deps wheels (pip download, in /home/ling/reserva/rea/)
+- [ ] Copy /home/ling/reserva/rea/ (876MB) to external disk / TeraBox
 
 ## Setup from scratch (Arch)
 
