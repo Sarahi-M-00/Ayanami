@@ -14,7 +14,7 @@ eval:
   eval_every_steps: 100
 train:
   max_steps: 1000
-  checkpoint_every_steps: 200
+  checkpoint_every_steps: 50
   max_seq_len: 2048
 output_dir: runs/phase10_text_sft
 resume_from: null
