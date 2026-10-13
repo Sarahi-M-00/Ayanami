@@ -225,3 +225,14 @@ Reason: Both gaps were found in the pilot ingest; bulk running without them woul
 ## 2026-10-04 — Bulk needs no prompt-count cut; notebook embeds compact pool
 Decision: Pilot timing (225 s / 50) extrapolates the full 1,911 to ~2.4 h — fits free tiers, so NO cut (the prompt's "cut count, not verifiers" branch not taken). Sessions split 0-4/5-9/10-14/15-19 (~40 min each). The bulk notebook embeds a COMPACT pool (id/category/lang/user/verifier/split/source/bare, 672 KB) and rebuilds full records from the repo's persona file — verified byte-identical for all 1,911 — instead of 5.8 MB of duplicated system prompts.
 Reason: Full system prompts in every embedded record wasted ~5 MB and risked drift between embedded copy and repo file; single-source reconstruction eliminates both.
+
+## Heretic + scope (principio permanente, 2026-10-13, por Ling)
+
+- Ayanami stays 100% heretic: no learned refusals, nothing that interferes
+  with legitimate work. The base is abliterated and training data contains
+  zero refusals — this is intentional and permanent.
+- The ONLY limits live above the weights: `configs/scope.yaml` (default-deny)
+  enforced in code (`scope_check`). Weights can be sweet-talked; the list cannot.
+- Rationale: refusal behavior breaks tool workflows and agentic loops;
+  scope gates constrain targets without censoring capability. Defensive +
+  authorized-only remains non-negotiable at the scope layer.
