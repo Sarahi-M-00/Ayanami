@@ -236,3 +236,11 @@ Reason: Full system prompts in every embedded record wasted ~5 MB and risked dri
 - Rationale: refusal behavior breaks tool workflows and agentic loops;
   scope gates constrain targets without censoring capability. Defensive +
   authorized-only remains non-negotiable at the scope layer.
+
+## Longinus (codename, 2026-10-14, por Ling)
+
+- REA (morluto/rea 6.4.0 + ghidra/jadx/frida) es la herramienta principal de
+  análisis de Ayanami. Codename interno: LONGINUS (la lanza).
+- Rol: plugin estrella del futuro agente (análisis de código/APK/firmware),
+  fuente de verifiers semánticos (R-03) y de data sintética verificada.
+- Espejo offline completo en `reserva-rea/` (880MB) + `install.sh`/`setup_todo.sh`.
