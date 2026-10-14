@@ -18,3 +18,5 @@ __pycache__/
 
 # Sealed test roster (hashes only; contents in eval files, evaluated once):
 !data/sealed/test_ids.sha256
+models/
+reserva-rea/
