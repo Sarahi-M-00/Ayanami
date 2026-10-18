@@ -19,10 +19,24 @@ defensive cybersecurity + DevOps, via distillation. Student base:
 - Local runner: `llamita.cpp/` snapshot + `~/bin/llm` (Super+Shift+I).
 
 ## Current state (edit me)
-- Phase: **10.5** — Run A (text_sft) relay-training on Colab T4 toward step 1000,
-  checkpoints every 50 auto-synced to Drive (`AYANAMI_OUTBOX`). Then Run B (logit_kd).
-- Last verified: suite 77 green (`pytest tests/ -q`).
-- Next: finish A → run B → 10.6 compare + evals → merge/export Q4.
+- Phase: **10.5** — Run A (text_sft) COMPLETE: step 1000, eval 0.2657, ppl 1.30
+  (checkpoint-1000 in Drive `runs/phase10_text_sft/checkpoints/`).
+- Run B (logit_kd) incident (2026-10-17): optimizer was built BEFORE the resume
+  rebinding in trainer.py, so every resumed session was a silent no-op (weights
+  never changed). Evidence: init eval 1.6103244414282731 identical when resuming
+  from checkpoint-300 and checkpoint-450. Fixed: optimizer/scheduler now built
+  after the rebind + `_assert_optimizer_matches` guard (+2 regression tests).
+  **Resume Run B from checkpoint-150 (last real weights; 200..450 are duplicates
+  of it — verify/delete).** Audit pending: same pattern may have no-op'd late
+  Run A resume sessions after commit f52396f (2026-10-12) — check
+  `runs/phase10_text_sft/metrics.jsonl` on Drive for flat loss after a session start.
+- Pending plan (agreed with Ling, do after Run B): automate the resume ritual —
+  each Colab session starts empty, currently manual `cp` of latest checkpoint from
+  Drive `runs/<run>/checkpoints/` to local `runs/<run>/checkpoints/` before launch.
+  Options: notebook cell auto-pulls latest from Drive, or trainer reads outbox dir.
+- Last verified: suite 79 green (`pytest tests/ -q`).
+- Next: stop the current no-op Colab session → push fix → resume B from 150 →
+  finish B → 10.6 compare + evals → merge/export Q4.
 
 ## Hard rules
 - Local open teachers only (Apache-2.0/MIT, license + fingerprint recorded).
