@@ -144,3 +144,27 @@ def test_encode_kd_example_skips_bad_shapes():
     rec["logprobs_topk"] = {"k": 4, "positions": [10**9], "ids": [[1] * 4],
                             "logprobs": [[-0.5] * 4], "tail_mass": [0.1]}
     assert encode_kd_example(tok, rec, 2048) is None
+
+
+# ---- Resume guard: optimizer must bind the post-rebind model params ----
+def test_optimizer_stale_params_guard():
+    import pytest
+    from ayanami_distill.train.trainer import _assert_optimizer_matches
+    original = torch.nn.Linear(4, 4)
+    opt = torch.optim.AdamW([p for p in original.parameters() if p.requires_grad], lr=1e-3)
+    _assert_optimizer_matches(original, opt)  # sane case passes
+    reborn = torch.nn.Linear(4, 4)  # what a resume rebinding produces
+    with pytest.raises(AssertionError):
+        _assert_optimizer_matches(reborn, opt)
+
+
+def test_optimizer_stale_step_is_silent_noop():
+    """Documents the incident: stale optimizer + real grads => weights frozen."""
+    original = torch.nn.Linear(4, 4)
+    opt = torch.optim.AdamW([p for p in original.parameters()], lr=0.5)
+    reborn = torch.nn.Linear(4, 4)
+    reborn.load_state_dict(original.state_dict())
+    before = [p.detach().clone() for p in reborn.parameters()]
+    reborn(torch.randn(3, 4)).sum().backward()
+    opt.step()  # optimizer still references `original`: nothing changes
+    assert all(torch.equal(b, p) for b, p in zip(before, reborn.parameters()))

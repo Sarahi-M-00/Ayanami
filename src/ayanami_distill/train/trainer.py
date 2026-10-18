@@ -119,6 +119,21 @@ def _move_optimizer_to_model(optimizer, model) -> None:
                 st[k] = v.to(dev)
 
 
+def _assert_optimizer_matches(model, optimizer) -> None:
+    """Fail fast if the optimizer references stale model parameters.
+
+    Regression guard (2026-10 Colab incident): building the optimizer before
+    a resume rebinds `model` left opt.step() updating discarded parameters —
+    resumed sessions logged plausible losses but never changed weights.
+    """
+    opt_ids = {id(p) for group in optimizer.param_groups for p in group["params"]}
+    model_ids = {id(p) for p in model.parameters() if p.requires_grad}
+    if opt_ids != model_ids:
+        raise AssertionError(
+            "optimizer is bound to stale model parameters — training would be "
+            "a silent no-op (build the optimizer after any model rebinding)")
+
+
 def save_checkpoint(run_dir: Path, step: int, model, optimizer, scheduler) -> Path:
     ckpt = run_dir / f"checkpoint-{step}"
     model.save_pretrained(ckpt / "adapter")
@@ -230,8 +245,6 @@ def train_text_sft(cfg: dict, run_dir: Path) -> dict[str, Any]:
                    for r in load_jsonl(ROOT / heldout_path, 200)]
         heldout_name = heldout_path
 
-    opt = torch.optim.AdamW(
-        [p for p in model.parameters() if p.requires_grad], lr=float(lora_cfg["lr"]))
     max_steps = int(train_cfg.get("max_steps", 1000))
     warmup = max(1, int(max_steps * float(lora_cfg.get("warmup_ratio", 0.03))))
 
@@ -241,7 +254,6 @@ def train_text_sft(cfg: dict, run_dir: Path) -> dict[str, Any]:
         progress = (step - warmup) / max(1, max_steps - warmup)
         return 0.5 * (1.0 + math.cos(math.pi * min(1.0, progress)))
 
-    sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda)
     bs = int(lora_cfg.get("batch_size", 1))
     accum = int(lora_cfg.get("grad_accum", 1))
     eval_every = int((cfg.get("eval") or {}).get("eval_every_steps", 100))
@@ -265,10 +277,19 @@ def train_text_sft(cfg: dict, run_dir: Path) -> dict[str, Any]:
         base_model = _load_base_model(cfg, lora_cfg)  # fresh base: no stacked adapters
         model = PeftModel.from_pretrained(base_model, src / "adapter")
         model.to(device)
+
+    # Built AFTER any resume rebinding: an optimizer captured earlier would
+    # point at discarded parameters and silently no-op.
+    opt = torch.optim.AdamW(
+        [p for p in model.parameters() if p.requires_grad], lr=float(lora_cfg["lr"]))
+    sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda)
+
+    if resume:
         start_step = load_training_state(src / "training_state.pt", opt, sched)
         _move_optimizer_to_model(opt, model)
         start_epoch_pos = start_step * bs * accum
         print(f"resumed from {src} at step {start_step}", flush=True)
+    _assert_optimizer_matches(model, opt)
 
     def log(row: dict) -> None:
         with open(metrics_path, "a", encoding="utf-8") as fh:
@@ -448,8 +469,6 @@ def train_logit_kd(cfg: dict, run_dir: Path) -> dict[str, Any]:
                 continue
     print(f"eval examples: {len(eval_items)}", flush=True)
 
-    opt = torch.optim.AdamW(
-        [p for p in model.parameters() if p.requires_grad], lr=float(lora_cfg["lr"]))
     max_steps = int(train_cfg.get("max_steps", 1000))
     warmup = max(1, int(max_steps * float(lora_cfg.get("warmup_ratio", 0.03))))
 
@@ -459,7 +478,6 @@ def train_logit_kd(cfg: dict, run_dir: Path) -> dict[str, Any]:
         progress = (step - warmup) / max(1, max_steps - warmup)
         return 0.5 * (1.0 + math.cos(math.pi * min(1.0, progress)))
 
-    sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda)
     accum = int(lora_cfg.get("grad_accum", 1))
     eval_every = int((cfg.get("eval") or {}).get("eval_every_steps", 100))
     ckpt_every = int(train_cfg.get("checkpoint_every_steps", 200))
@@ -482,10 +500,19 @@ def train_logit_kd(cfg: dict, run_dir: Path) -> dict[str, Any]:
         base_model = _load_base_model(cfg, lora_cfg)  # fresh base: no stacked adapters
         model = PeftModel.from_pretrained(base_model, src / "adapter")
         model.to(device)
+
+    # Built AFTER any resume rebinding: an optimizer captured earlier would
+    # point at discarded parameters and silently no-op.
+    opt = torch.optim.AdamW(
+        [p for p in model.parameters() if p.requires_grad], lr=float(lora_cfg["lr"]))
+    sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda)
+
+    if resume:
         start_step = load_training_state(src / "training_state.pt", opt, sched)
         _move_optimizer_to_model(opt, model)
         start_pos = start_step * accum
         print(f"resumed from {src} at step {start_step}", flush=True)
+    _assert_optimizer_matches(model, opt)
 
     def log(row: dict) -> None:
         with open(metrics_path, "a", encoding="utf-8") as fh:
