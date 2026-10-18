@@ -141,7 +141,7 @@ def save_checkpoint(run_dir: Path, step: int, model, optimizer, scheduler) -> Pa
     outbox = os.environ.get("AYANAMI_OUTBOX")
     if outbox:
         import shutil
-        dest = Path(outbox) / run_dir.name / f"checkpoint-{step}"
+        dest = Path(outbox) / run_dir.name / "checkpoints" / f"checkpoint-{step}"
         dest.parent.mkdir(parents=True, exist_ok=True)
         if dest.exists():
             shutil.rmtree(dest)

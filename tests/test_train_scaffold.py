@@ -170,6 +170,24 @@ def test_optimizer_stale_step_is_silent_noop():
     assert all(torch.equal(b, p) for b, p in zip(before, reborn.parameters()))
 
 
+def test_save_checkpoint_outbox_mirrors_local_layout(tmp_path, monkeypatch):
+    from ayanami_distill.train.trainer import save_checkpoint
+
+    class FakeModel:
+        def save_pretrained(self, path):
+            path.mkdir(parents=True, exist_ok=True)
+
+    layer = torch.nn.Linear(2, 2)
+    opt = torch.optim.AdamW(layer.parameters(), lr=1e-3)
+    sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda s: 1.0)
+    run_dir = tmp_path / "runs" / "phase10_logit_kd"
+    monkeypatch.setenv("AYANAMI_OUTBOX", str(tmp_path / "outbox"))
+    ckpt = save_checkpoint(run_dir, 50, FakeModel(), opt, sched)
+    dest = tmp_path / "outbox" / "phase10_logit_kd" / "checkpoints" / "checkpoint-50"
+    assert ckpt == run_dir / "checkpoint-50"
+    assert dest.is_dir() and (dest / "training_state.pt").is_file()
+
+
 def test_resume_passes_is_trainable_true():
     """Regression: PeftModel.from_pretrained defaults to is_trainable=False,
     which freezes adapters (0 trainable params => silent no-op on old peft,
