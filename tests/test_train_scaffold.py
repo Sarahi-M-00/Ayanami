@@ -168,3 +168,35 @@ def test_optimizer_stale_step_is_silent_noop():
     reborn(torch.randn(3, 4)).sum().backward()
     opt.step()  # optimizer still references `original`: nothing changes
     assert all(torch.equal(b, p) for b, p in zip(before, reborn.parameters()))
+
+
+def test_resume_passes_is_trainable_true():
+    """Regression: PeftModel.from_pretrained defaults to is_trainable=False,
+    which freezes adapters (0 trainable params => silent no-op on old peft,
+    empty optimizer crash on current one)."""
+    import inspect
+    from ayanami_distill.train import trainer
+    for fn in (trainer.train_text_sft, trainer.train_logit_kd):
+        src = inspect.getsource(fn)
+        assert "PeftModel.from_pretrained(base_model, src / \"adapter\", is_trainable=True)" in src
+
+
+def test_peft_from_pretrained_freeze_semantics(tmp_path):
+    from peft import LoraConfig, PeftModel, get_peft_model
+    from transformers import Qwen3Config, Qwen3ForCausalLM
+    cfg = Qwen3Config(vocab_size=64, hidden_size=32, num_hidden_layers=1,
+                      num_attention_heads=2, num_key_value_heads=2,
+                      intermediate_size=64)
+    base = Qwen3ForCausalLM(cfg)
+    wrapped = get_peft_model(base, LoraConfig(r=4, lora_alpha=8,
+                                              target_modules=["q_proj"]))
+    n_ref = sum(p.numel() for p in wrapped.parameters() if p.requires_grad)
+    wrapped.save_pretrained(tmp_path / "adapter")
+    assert n_ref > 0
+
+    frozen = PeftModel.from_pretrained(Qwen3ForCausalLM(cfg), tmp_path / "adapter")
+    assert not any(p.requires_grad for p in frozen.parameters())
+
+    revived = PeftModel.from_pretrained(Qwen3ForCausalLM(cfg), tmp_path / "adapter",
+                                        is_trainable=True)
+    assert sum(p.numel() for p in revived.parameters() if p.requires_grad) == n_ref

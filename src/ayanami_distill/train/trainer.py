@@ -275,13 +275,17 @@ def train_text_sft(cfg: dict, run_dir: Path) -> dict[str, Any]:
         src = src if src.exists() else ckpts[-1]
         from peft import PeftModel  # local import: only needed on resume
         base_model = _load_base_model(cfg, lora_cfg)  # fresh base: no stacked adapters
-        model = PeftModel.from_pretrained(base_model, src / "adapter")
+        model = PeftModel.from_pretrained(base_model, src / "adapter", is_trainable=True)
         model.to(device)
 
     # Built AFTER any resume rebinding: an optimizer captured earlier would
     # point at discarded parameters and silently no-op.
-    opt = torch.optim.AdamW(
-        [p for p in model.parameters() if p.requires_grad], lr=float(lora_cfg["lr"]))
+    params = [p for p in model.parameters() if p.requires_grad]
+    if not params:
+        raise RuntimeError(
+            "resumed model has no trainable parameters — from_pretrained must "
+            "pass is_trainable=True (default freezes adapters on current PEFT)")
+    opt = torch.optim.AdamW(params, lr=float(lora_cfg["lr"]))
     sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda)
 
     if resume:
@@ -498,13 +502,17 @@ def train_logit_kd(cfg: dict, run_dir: Path) -> dict[str, Any]:
         src = src if src.exists() else ckpts[-1]
         from peft import PeftModel  # local import: only needed on resume
         base_model = _load_base_model(cfg, lora_cfg)  # fresh base: no stacked adapters
-        model = PeftModel.from_pretrained(base_model, src / "adapter")
+        model = PeftModel.from_pretrained(base_model, src / "adapter", is_trainable=True)
         model.to(device)
 
     # Built AFTER any resume rebinding: an optimizer captured earlier would
     # point at discarded parameters and silently no-op.
-    opt = torch.optim.AdamW(
-        [p for p in model.parameters() if p.requires_grad], lr=float(lora_cfg["lr"]))
+    params = [p for p in model.parameters() if p.requires_grad]
+    if not params:
+        raise RuntimeError(
+            "resumed model has no trainable parameters — from_pretrained must "
+            "pass is_trainable=True (default freezes adapters on current PEFT)")
+    opt = torch.optim.AdamW(params, lr=float(lora_cfg["lr"]))
     sched = torch.optim.lr_scheduler.LambdaLR(opt, lr_lambda)
 
     if resume:
