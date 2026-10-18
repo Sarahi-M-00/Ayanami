@@ -21,15 +21,19 @@ defensive cybersecurity + DevOps, via distillation. Student base:
 ## Current state (edit me)
 - Phase: **10.5** — Run A (text_sft) COMPLETE: step 1000, eval 0.2657, ppl 1.30
   (checkpoint-1000 in Drive `runs/phase10_text_sft/checkpoints/`).
-- Run B (logit_kd) incident (2026-10-17): optimizer was built BEFORE the resume
-  rebinding in trainer.py, so every resumed session was a silent no-op (weights
-  never changed). Evidence: init eval 1.6103244414282731 identical when resuming
-  from checkpoint-300 and checkpoint-450. Fixed: optimizer/scheduler now built
-  after the rebind + `_assert_optimizer_matches` guard (+2 regression tests).
-  **Resume Run B from checkpoint-150 (last real weights; 200..450 are duplicates
-  of it — verify/delete).** Audit pending: same pattern may have no-op'd late
-  Run A resume sessions after commit f52396f (2026-10-12) — check
-  `runs/phase10_text_sft/metrics.jsonl` on Drive for flat loss after a session start.
+- Run B (logit_kd) incident (2026-10-17): every resumed session was a silent
+  no-op (weights never changed; init eval stuck at exactly 1.6103244414282731).
+  Two causes fixed in trainer.py: (1) `PeftModel.from_pretrained` defaults to
+  `is_trainable=False`, which freezes the adapter on current PEFT (0.21.2) —
+  now passes `is_trainable=True` + explicit no-trainable-params error; (2) the
+  optimizer was built BEFORE the resume rebinding — now built after, with
+  `_assert_optimizer_matches` guard (+2 regression tests). Drive 50-300 were
+  deleted by rotation; 400/450 remain and are copies of the real step-150
+  weights, so local `checkpoint-150` was reconstructed from 400 (step and
+  scheduler reset to 150; optimizer state is the genuine 150 momentum).
+  Audit pending: late Run A resume sessions may have no-op'd the same way —
+  check `runs/phase10_text_sft/metrics.jsonl` on Drive (loss must decline
+  *within* a session, after its init_eval row).
 - Pending plan (agreed with Ling, do after Run B): automate the resume ritual —
   each Colab session starts empty, currently manual `cp` of latest checkpoint from
   Drive `runs/<run>/checkpoints/` to local `runs/<run>/checkpoints/` before launch.
