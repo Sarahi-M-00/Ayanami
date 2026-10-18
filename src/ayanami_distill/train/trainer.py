@@ -570,9 +570,9 @@ def train_logit_kd(cfg: dict, run_dir: Path) -> dict[str, Any]:
             batch = kd_collate(ex, device)
             ce, kd, loss = kd_step(batch)
             (loss / accum).backward()
-            t_ce += float(ce) / accum
-            t_kd += float(kd) / accum
-            t_loss += float(loss) / accum
+            t_ce += float(ce.detach()) / accum
+            t_kd += float(kd.detach()) / accum
+            t_loss += float(loss.detach()) / accum
         torch.nn.utils.clip_grad_norm_(
             [p for p in model.parameters() if p.requires_grad], 1.0)
         opt.step()
