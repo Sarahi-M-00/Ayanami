@@ -264,12 +264,12 @@ def train_text_sft(cfg: dict, run_dir: Path) -> dict[str, Any]:
     resume = cfg.get("resume_from")
     if resume is None:
         # Friendly default: resume latest checkpoint when present.
-        auto = sorted((run_dir / "checkpoints").glob("checkpoint-*"))
+        auto = sorted((run_dir / "checkpoints").glob("checkpoint-*"), key=lambda p: int(p.name.split("-")[-1]))
         if auto:
             resume = auto[-1].name
             print(f"auto-resume from {resume}", flush=True)
     if resume:
-        ckpts = sorted((run_dir / "checkpoints").glob("checkpoint-*"))
+        ckpts = sorted((run_dir / "checkpoints").glob("checkpoint-*"), key=lambda p: int(p.name.split("-")[-1]))
         src = Path(resume) if Path(resume).is_absolute() else run_dir / "checkpoints" / resume
         if not ckpts and not src.exists():
             raise FileNotFoundError(f"nothing to resume from: {resume}")
@@ -490,12 +490,12 @@ def train_logit_kd(cfg: dict, run_dir: Path) -> dict[str, Any]:
     resume = cfg.get("resume_from")
     if resume is None:
         # Friendly default: resume latest checkpoint when present.
-        auto = sorted((run_dir / "checkpoints").glob("checkpoint-*"))
+        auto = sorted((run_dir / "checkpoints").glob("checkpoint-*"), key=lambda p: int(p.name.split("-")[-1]))
         if auto:
             resume = auto[-1].name
             print(f"auto-resume from {resume}", flush=True)
     if resume:
-        ckpts = sorted((run_dir / "checkpoints").glob("checkpoint-*"))
+        ckpts = sorted((run_dir / "checkpoints").glob("checkpoint-*"), key=lambda p: int(p.name.split("-")[-1]))
         src = Path(resume) if Path(resume).is_absolute() else run_dir / "checkpoints" / resume
         if not ckpts and not src.exists():
             raise FileNotFoundError(f"nothing to resume from: {resume}")
