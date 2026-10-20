@@ -184,7 +184,7 @@ def test_save_checkpoint_outbox_mirrors_local_layout(tmp_path, monkeypatch):
     monkeypatch.setenv("AYANAMI_OUTBOX", str(tmp_path / "outbox"))
     ckpt = save_checkpoint(run_dir, 50, FakeModel(), opt, sched)
     dest = tmp_path / "outbox" / "phase10_logit_kd" / "checkpoints" / "checkpoint-50"
-    assert ckpt == run_dir / "checkpoint-50"
+    assert ckpt == run_dir / "checkpoints" / "checkpoint-50"
     assert dest.is_dir() and (dest / "training_state.pt").is_file()
 
 

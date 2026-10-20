@@ -135,7 +135,8 @@ def _assert_optimizer_matches(model, optimizer) -> None:
 
 
 def save_checkpoint(run_dir: Path, step: int, model, optimizer, scheduler) -> Path:
-    ckpt = run_dir / f"checkpoint-{step}"
+    run_dir = Path(run_dir)
+    ckpt = run_dir / "checkpoints" / f"checkpoint-{step}"
     model.save_pretrained(ckpt / "adapter")
     save_training_state(ckpt / "training_state.pt", optimizer, scheduler, step)
     outbox = os.environ.get("AYANAMI_OUTBOX")
@@ -354,8 +355,7 @@ def train_text_sft(cfg: dict, run_dir: Path) -> dict[str, Any]:
                   f"ppl={ev['eval_ppl']:.2f}", flush=True)
         log(row)
         if step % ckpt_every == 0 or step == max_steps:
-            ckpt = run_dir / "checkpoints" / f"checkpoint-{step}"
-            save_checkpoint(ckpt.parent, step, model, opt, sched)
+            ckpt = save_checkpoint(run_dir, step, model, opt, sched)
             print(f"checkpoint: {ckpt}", flush=True)
 
     final = {"status": "done", "steps": step, "adapter": "checkpoints/checkpoint-" + str(step)}
@@ -587,8 +587,7 @@ def train_logit_kd(cfg: dict, run_dir: Path) -> dict[str, Any]:
                   f"eval={ev.get('eval_loss', float('nan')):.4f}", flush=True)
         log(row)
         if step % ckpt_every == 0 or step == max_steps:
-            ckpt = run_dir / "checkpoints" / f"checkpoint-{step}"
-            save_checkpoint(ckpt.parent, step, model, opt, sched)
+            ckpt = save_checkpoint(run_dir, step, model, opt, sched)
             print(f"checkpoint: {ckpt}", flush=True)
 
     final = {"status": "done", "steps": step, "adapter": "checkpoints/checkpoint-" + str(step)}
