@@ -6,6 +6,9 @@ lora: configs/lora.yaml
 seed: 7
 kd:
   alpha: 0.5
+  # T=2 renormalizes BOTH distributions over the top-32 support only: the
+  # cache stores the tail at T=1 and a T=2 tail cannot be reconstructed.
+  # (T=1 is the only temperature where the cached tail bucket is exact.)
   temperature: 2.0
   divergence: forward
   topk: 32

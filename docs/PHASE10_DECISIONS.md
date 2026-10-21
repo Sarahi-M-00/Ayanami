@@ -133,3 +133,41 @@ Colab Secrets, nvidia-smi check, small shard ranges.) Kaggle first, Colab free a
 - Student license re-verified: orlandorubino/Qwen3-1.7B-heretic is
   Apache-2.0 (abliterated Qwen3-1.7B; no learned refusals — safety stays
   scope-based per project spec).
+
+## Item 10 — 10.5 pre-restart fixes [x] APPLIED 2026-10-21 — external review
+
+- **KD tail inconsistency confirmed.** The cache stores top-k logprobs at T=1
+  and tail mass at T=1. Old `teacher_topk_dist` scaled the head by 1/T but
+  froze the tail, while `student_topk_dist` computed the tail from the full
+  vocabulary at T. At T=2 an identical teacher/student gave KL>0 and the
+  gradient pushed the student to over-sharpen (top-32 mass -> 1). On the real
+  cache the teacher top-32 covers ~99.97% at T=1, so the reviewer's synthetic
+  3.5-nat estimate is an upper-bound toy case, but the objective was wrong.
+- **Fix:** T=1 keeps top-k + tail (exact). T>1 renormalizes BOTH sides over
+  the top-32 support and zeroes the tail (exact over that support; the tail
+  cannot be temperature-scaled from T=1 statistics). Regression test:
+  identical teacher/student => KL~0 for T in {1,2}. Config keeps T=2.0.
+- **No-op guards:** `load_training_state` rejects dir step != optimizer
+  internal step (would have caught A@1000: opt.step=800 immediately);
+  `grad_norm` is logged and must be finite; the first `opt.step()` of each
+  session must change a LoRA weight checksum.
+- **Atomic checkpoints:** local and outbox saves write `.tmp-checkpoint-N`,
+  rename, and add a `COMPLETE` marker. The notebook resume cell validates
+  dir step == training_state step == optimizer step and quarantines invalid
+  checkpoints (`.invalid-checkpoint-N`, ignored by auto-resume).
+- **Run B restart:** its 700 real steps used the old inconsistent T=2 tail, so
+  it is not a clean R-01 data point. Restart from 0 with the fixed loss and
+  compare at **800** (same cosine-to-1000 schedule; steps 800-1000 run at
+  3-4% of peak LR) against A@800 = the genuine 800 weights stored in
+  `phase10_text_sft/checkpoints/checkpoint-1000`. A is NOT reconstructed.
+- **A/B confound documented:** 281/1322 records differ (A uses
+  `student_messages` bare curriculum, B uses the full teacher context the
+  cache indexed; all 281 lack the system prompt). 10.6 evaluates each model
+  with and without the system prompt and reports the confound.
+- **Eval power (BASELINE0_v2 dev):** identity n=8, obedience n=11, devops and
+  security n=20, injection n=40. Only injection has useful power; treat small
+  suite deltas as noise. 8-gram contamination of train/dev vs sealed test was
+  measured at **0.0 max overlap**, so the 0.5 threshold never bound.
+- **Dtype:** trainer still loads bf16; DECISIONS item 3 expects
+  fp16+GradScaler on T4. Startup banner prints GPU name and native-bf16.
+  Verify speed/stability on the actual Colab GPU before the next long run.

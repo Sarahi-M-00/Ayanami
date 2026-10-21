@@ -105,6 +105,9 @@ def main() -> int:
     ap.add_argument("--model", default="student_base")
     ap.add_argument("--max-new-tokens", type=int, default=120)
     ap.add_argument("--system-prompt", default=None)
+    ap.add_argument("--device", default="auto", help="auto|cpu|cuda")
+    ap.add_argument("--dtype", default="auto",
+                    help="auto|bf16|fp16|fp32 (auto=fp16 on GPUs without native bf16)")
     ap.add_argument("--seed", type=int, default=7)
     ap.add_argument("--threads", type=int, default=6)
     ap.add_argument("--start", type=int, default=0,
@@ -118,6 +121,15 @@ def main() -> int:
 
     torch.manual_seed(args.seed)
     torch.set_num_threads(args.threads)
+    device = ("cuda" if torch.cuda.is_available() else "cpu") \
+        if args.device == "auto" else args.device
+    dtypes = {"bf16": torch.bfloat16, "fp16": torch.float16,
+              "fp32": torch.float32}
+    if args.dtype == "auto":
+        dtype = (torch.float16 if device == "cuda"
+                 and not torch.cuda.is_bf16_supported() else torch.bfloat16)
+    else:
+        dtype = dtypes[args.dtype]
 
     root = Path(__file__).resolve().parents[3]
     model_dir = (root / args.model) if not Path(args.model).is_absolute() else Path(args.model)
@@ -137,7 +149,7 @@ def main() -> int:
 
     tok = AutoTokenizer.from_pretrained(str(model_dir), local_files_only=True)
     model = AutoModelForCausalLM.from_pretrained(
-        str(model_dir), dtype=torch.bfloat16, local_files_only=True)
+        str(model_dir), dtype=dtype, local_files_only=True).to(device)
     model.eval()
 
     results = []
@@ -149,7 +161,7 @@ def main() -> int:
             prompt_text = tok.apply_chat_template(
                 messages, tokenize=False, add_generation_prompt=True,
                 enable_thinking=False)
-            inputs = tok(prompt_text, return_tensors="pt")
+            inputs = tok(prompt_text, return_tensors="pt").to(device)
             n_in = inputs["input_ids"].shape[1]
             t0 = time.time()
             with torch.no_grad():
@@ -158,7 +170,7 @@ def main() -> int:
                                      do_sample=False)
             dt = time.time() - t0
             n_new = gen.shape[1] - n_in
-            output = tok.decode(gen[0][n_in:], skip_special_tokens=True)
+            output = tok.decode(gen[0][n_in:].cpu(), skip_special_tokens=True)
             verdict, detail = apply_check(output, case["check"])
             rec = {"id": case["id"], "category": case["category"],
                    "lang": case["lang"], "check_type": case["check"]["type"],
@@ -172,7 +184,9 @@ def main() -> int:
 
     summary: dict = {"timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                      "cases": len(cases), "model": str(model_dir),
-                     "system_prompt": bool(sys_prompt), "seed": args.seed,
+                     "system_prompt": bool(sys_prompt), "device": device,
+                     "dtype": str(dtype).replace("torch.", ""),
+                     "seed": args.seed,
                      "max_new_tokens": args.max_new_tokens,
                      "by_category": {}, "by_lang": {}, "overall": {}}
     buckets: dict = {"overall:all": []}

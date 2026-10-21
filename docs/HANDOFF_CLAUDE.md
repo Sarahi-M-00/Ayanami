@@ -1,4 +1,4 @@
-# HANDOFF FOR CLAUDE (or any successor agent) — ayanami-distill, Stage 10.3 done
+# HANDOFF FOR CLAUDE (HISTORICAL, Stage 10.3) — see AGENTCONTEXT.md for current state
 
 Copy everything below the line into a new Claude conversation. Attach or link
 https://github.com/Sarahi-M-00/Ayanami if you can. Ask Claude to act as

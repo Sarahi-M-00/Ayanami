@@ -47,21 +47,25 @@ def summarize(results: list[dict]) -> dict:
     return out
 
 
-def run_suite(model, tok, cases: list[dict], max_new: int) -> list[dict]:
+def run_suite(model, tok, cases: list[dict], max_new: int,
+              device: str = "cpu", sys_prompt: str | None = None) -> list[dict]:
     import torch
     from ayanami_distill.eval.persona_eval import apply_check
     results = []
     for i, case in enumerate(cases):
-        prompt = tok.apply_chat_template(case["messages"], tokenize=False,
+        messages = list(case["messages"])
+        if sys_prompt:
+            messages = [{"role": "system", "content": sys_prompt}] + messages
+        prompt = tok.apply_chat_template(messages, tokenize=False,
                                          add_generation_prompt=True,
                                          enable_thinking=False)
-        inputs = tok(prompt, return_tensors="pt")
+        inputs = tok(prompt, return_tensors="pt").to(device)
         n_in = inputs["input_ids"].shape[1]
         t0 = time.time()
         with torch.no_grad():
             gen = model.generate(**inputs, max_new_tokens=max_new, do_sample=False)
         dt = time.time() - t0
-        output = tok.decode(gen[0][n_in:], skip_special_tokens=True)
+        output = tok.decode(gen[0][n_in:].cpu(), skip_special_tokens=True)
         verdict, detail = apply_check(output, case["check"])
         results.append({"id": case["id"], "category": case["category"],
                         "lang": case["lang"], "verdict": verdict, "detail": detail,
@@ -70,7 +74,8 @@ def run_suite(model, tok, cases: list[dict], max_new: int) -> list[dict]:
     return results
 
 
-def suite_toolcall(model, tok, trajectories: list[dict]) -> dict:
+def suite_toolcall(model, tok, trajectories: list[dict],
+                   device: str = "cpu", sys_prompt: str | None = None) -> dict:
     import torch
     from ayanami_distill.tools.registry import validate_args
     from ayanami_distill.tools.catalog import build_default_registry
@@ -90,15 +95,19 @@ def suite_toolcall(model, tok, trajectories: list[dict]) -> dict:
         gold, _ = extract_tool_calls(msgs[-1]["content"])
         gold_names = [c["name"] for c in gold]
         # The model must SEE the tool schemas (10.1 fix: they were omitted).
-        prompt = tok.apply_chat_template(msgs[:-1], tokenize=False,
+        if sys_prompt:
+            msgs = [{"role": "system", "content": sys_prompt}] + msgs[:-1]
+        else:
+            msgs = msgs[:-1]
+        prompt = tok.apply_chat_template(msgs, tokenize=False,
                                          add_generation_prompt=True,
                                          enable_thinking=False,
                                          tools=tools)
-        inputs = tok(prompt, return_tensors="pt")
+        inputs = tok(prompt, return_tensors="pt").to(device)
         n_in = inputs["input_ids"].shape[1]
         with torch.no_grad():
             gen = model.generate(**inputs, max_new_tokens=64, do_sample=False)
-        output = tok.decode(gen[0][n_in:], skip_special_tokens=True)
+        output = tok.decode(gen[0][n_in:].cpu(), skip_special_tokens=True)
         pred, parse_errs = extract_tool_calls(output)
         # 10.1 fix: parse_ok requires >=1 parsed call (was vacuously true on zero).
         parse_ok = bool(pred) and not parse_errs
@@ -124,7 +133,7 @@ def suite_toolcall(model, tok, trajectories: list[dict]) -> dict:
             "correct_tool_rate": round(sum(r["correct_tool"] for r in rows) / n, 4)}
 
 
-def suite_ppl(model, tok) -> dict:
+def suite_ppl(model, tok, device: str = "cpu") -> dict:
     import torch
     import torch.nn.functional as F
     lines = [line.strip() for line in
@@ -132,7 +141,7 @@ def suite_ppl(model, tok) -> dict:
     total, count = 0.0, 0
     with torch.no_grad():
         for line in lines:
-            ids = tok(line, return_tensors="pt")["input_ids"]
+            ids = tok(line, return_tensors="pt")["input_ids"].to(device)
             if ids.shape[1] < 3:
                 continue
             logits = model(ids).logits
@@ -271,6 +280,11 @@ def main() -> int:
     ap.add_argument("--baseline", action="store_true")
     ap.add_argument("--skip-lmeval", action="store_true")
     ap.add_argument("--model", default="student_base")
+    ap.add_argument("--device", default="auto", help="auto|cpu|cuda")
+    ap.add_argument("--dtype", default="auto",
+                    help="auto|bf16|fp16|fp32 (auto=fp16 on GPUs without native bf16)")
+    ap.add_argument("--system-prompt", default=None,
+                    help="text file prepended as a system message to every case")
     ap.add_argument("--seed", type=int, default=7)
     args = ap.parse_args()
 
@@ -279,6 +293,15 @@ def main() -> int:
 
     torch.manual_seed(args.seed)
     torch.set_num_threads(6)
+    device = ("cuda" if torch.cuda.is_available() else "cpu") \
+        if args.device == "auto" else args.device
+    dtypes = {"bf16": torch.bfloat16, "fp16": torch.float16,
+              "fp32": torch.float32}
+    if args.dtype == "auto":
+        dtype = (torch.float16 if device == "cuda"
+                 and not torch.cuda.is_bf16_supported() else torch.bfloat16)
+    else:
+        dtype = dtypes[args.dtype]
     root = Path(__file__).resolve().parents[3]
     model_dir = str(root / args.model) if not Path(args.model).is_absolute() else args.model
     out_path = Path(args.out)
@@ -290,11 +313,18 @@ def main() -> int:
         with open(DATA / name, encoding="utf-8") as fh:
             return [json.loads(line) for line in fh if line.strip()]
 
+    sys_prompt = None
+    if args.system_prompt:
+        sys_prompt = Path(args.system_prompt).read_text(encoding="utf-8")
+    print(f"device={device} dtype={dtype} "
+          f"system_prompt={'yes' if sys_prompt else 'no'}", flush=True)
     print("== persona suite (subprocess, tested CLI) ==", flush=True)
     p_out, p_sum = out_path.parent / "persona_results.jsonl", out_path.parent / "persona_summary.json"
     proc = subprocess.run(
         [str(root / ".venv/bin/python"), "-m", "ayanami_distill.eval.persona_eval",
          "--cases", str(root / "persona/eval/cases.jsonl"),
+         "--model", args.model, "--device", device, "--dtype", args.dtype,
+         *(["--system-prompt", str(Path(args.system_prompt))] if args.system_prompt else []),
          "--out", str(p_out), "--summary", str(p_sum)],
         capture_output=True, text=True, cwd=str(root),
         env={**os.environ, "PYTHONPATH": str(root / "src")})
@@ -312,23 +342,23 @@ def main() -> int:
     print("== loading model once for obedience/domain/toolcall/ppl ==", flush=True)
     tok = AutoTokenizer.from_pretrained(model_dir, local_files_only=True)
     model = AutoModelForCausalLM.from_pretrained(
-        model_dir, dtype=torch.bfloat16, local_files_only=True)
+        model_dir, dtype=dtype, local_files_only=True).to(device)
     model.eval()
 
     print("== obedience (16) ==", flush=True)
-    obed = run_suite(model, tok, load_cases("obedience.jsonl"), 80)
+    obed = run_suite(model, tok, load_cases("obedience.jsonl"), 80, device, sys_prompt)
     print("== domain devops (40) ==", flush=True)
-    devops = run_suite(model, tok, load_cases("domain_devops.jsonl"), 80)
+    devops = run_suite(model, tok, load_cases("domain_devops.jsonl"), 80, device, sys_prompt)
     print("== domain security (40) ==", flush=True)
-    sec = run_suite(model, tok, load_cases("domain_security.jsonl"), 80)
+    sec = run_suite(model, tok, load_cases("domain_security.jsonl"), 80, device, sys_prompt)
 
     print("== toolcall (10 trajectories) ==", flush=True)
     trajs = [json.loads(line) for line in
              open(root / "tests/fixtures/trajectories.jsonl", encoding="utf-8")]
-    toolcall = suite_toolcall(model, tok, trajs)
+    toolcall = suite_toolcall(model, tok, trajs, device, sys_prompt)
 
     print("== held-out ppl ==", flush=True)
-    ppl = suite_ppl(model, tok)
+    ppl = suite_ppl(model, tok, device)
     print(f"  ppl={ppl['perplexity']}", flush=True)
     del model
 
@@ -350,6 +380,8 @@ def main() -> int:
     }
     eval_doc = {"timestamp": datetime.now(timezone.utc).isoformat(timespec="seconds"),
                 "model": args.model, "seed": args.seed,
+                "device": device, "dtype": str(dtype).replace("torch.", ""),
+                "system_prompt": bool(sys_prompt),
                 "decoding": "greedy, enable_thinking=False",
                 "suites": suites}
     with open(out_path, "w", encoding="utf-8") as fh:

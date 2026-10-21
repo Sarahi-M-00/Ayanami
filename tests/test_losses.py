@@ -71,16 +71,18 @@ def _cached_teacher(student: torch.Tensor, k: int):
     return topk_ids, topk_vals.clamp_min(1e-9).log(), (1.0 - topk_vals.sum(-1)).clamp_min(1e-9)
 
 
-def test_kd_exact_at_T1_and_contrastive_at_T2():
+def test_kd_identical_teacher_student_is_zero_at_T1_and_T2():
     B, Tm, Vs, k = 2, 5, 40, 6
     torch.manual_seed(2)
     student = torch.randn(B, Tm, Vs)
     other = torch.randn(B, Tm, Vs)
     topk_ids, teacher_lp, tail = _cached_teacher(student, k)
-    # T=1: cached triple is exact -> loss ~0 (implementation is exact here)
-    loss = KD.kd_loss(student, topk_ids, teacher_lp, tail, hard_labels=None, T=1.0)
-    assert torch.isfinite(loss) and abs(loss.item()) < 1e-4, loss.item()
-    # T=2: tail tempering is approximate, so check the contrastive property
+    # Regression: identical distributions must give KL=0 at every supported T.
+    # At T=1 the cached top-k + tail is exact; at T>1 both sides are
+    # renormalized over the same top-k support (tail bucket zero).
+    for T in (1.0, 2.0):
+        loss = KD.kd_loss(student, topk_ids, teacher_lp, tail, hard_labels=None, T=T)
+        assert torch.isfinite(loss) and abs(loss.item()) < 1e-4, (T, loss.item())
     for div in ("forward", "reverse", "jsd"):
         l_same = KD.kd_loss(student, topk_ids, teacher_lp, tail,
                             hard_labels=None, divergence=div, T=2.0)
@@ -88,6 +90,20 @@ def test_kd_exact_at_T1_and_contrastive_at_T2():
                              hard_labels=None, divergence=div, T=2.0)
         assert torch.isfinite(l_same) and l_same.item() >= -1e-6, (div, l_same.item())
         assert l_same.item() < l_other.item(), (div, l_same.item(), l_other.item())
+
+
+def test_kd_tail_bucket_only_used_at_T1():
+    torch.manual_seed(5)
+    student = torch.randn(1, 3, 30)
+    ids, lp, tail = _cached_teacher(student, 6)
+    t1 = KD.teacher_topk_dist(lp, tail, 1.0)
+    t2 = KD.teacher_topk_dist(lp, tail, 2.0)
+    assert torch.allclose(t1[..., -1], tail, atol=1e-5)
+    assert torch.equal(t2[..., -1], torch.zeros_like(t2[..., -1]))
+    s1 = KD.student_topk_dist(student, ids, 1.0)
+    s2 = KD.student_topk_dist(student, ids, 2.0)
+    assert torch.allclose(s1[..., -1], tail, atol=1e-5)
+    assert torch.equal(s2[..., -1], torch.zeros_like(s2[..., -1]))
 
 
 def test_kd_alpha_one_equals_ce_and_temperature_matters():

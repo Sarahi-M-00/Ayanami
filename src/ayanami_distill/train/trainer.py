@@ -18,6 +18,7 @@ import json
 import math
 import os
 import random
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -99,11 +100,27 @@ def save_training_state(path: Path, optimizer, scheduler, step: int) -> None:
 
 def load_training_state(path: Path, optimizer, scheduler) -> int:
     state = torch.load(path, map_location="cpu", weights_only=False)
+    step = int(state["step"])
+    opt_steps = {
+        int(v["step"].item()) if torch.is_tensor(v["step"]) else int(v["step"])
+        for v in state["optimizer"].get("state", {}).values()
+        if isinstance(v, dict) and "step" in v
+    }
+    if opt_steps and opt_steps != {step}:
+        raise AssertionError(
+            f"checkpoint step {step} != optimizer internal step {sorted(opt_steps)}: "
+            "stale/no-op checkpoint (resuming would not train). Refusing to resume.")
+    if scheduler and state["scheduler"]:
+        sched_epoch = int(state["scheduler"].get("last_epoch", -1))
+        if sched_epoch != step:
+            raise AssertionError(
+                f"checkpoint step {step} != scheduler last_epoch {sched_epoch}: "
+                "hand-edited checkpoint without scheduler fix (LR would be wrong).")
     optimizer.load_state_dict(state["optimizer"])
     if scheduler and state["scheduler"]:
         scheduler.load_state_dict(state["scheduler"])
     torch.set_rng_state(state["torch_rng"])
-    return int(state["step"])
+    return step
 
 
 def _move_optimizer_to_model(optimizer, model) -> None:
@@ -134,19 +151,60 @@ def _assert_optimizer_matches(model, optimizer) -> None:
             "a silent no-op (build the optimizer after any model rebinding)")
 
 
+def _trainable_weights_checksum(params) -> float:
+    return float(sum(p.detach().abs().sum().item() for p in params))
+
+
+def _device_banner(device: str) -> None:
+    if device == "cuda":
+        name = torch.cuda.get_device_name(0)
+        bf16 = torch.cuda.is_bf16_supported()
+        print(f"device: cuda ({name}); native bf16={bf16}", flush=True)
+        if not bf16:
+            print("WARNING: no native bf16 on this GPU; the trainer still "
+                  "loads bfloat16 (DECISIONS item 3 expects fp16+GradScaler "
+                  "here) — verify speed/stability.", flush=True)
+    else:
+        print(f"device: {device}", flush=True)
+
+
+def _checkpoint_dirs(run_dir: Path) -> list[Path]:
+    """Checkpoints sorted by numeric step; prefer ones with a COMPLETE marker.
+
+    Legacy checkpoints (pre-COMPLETE) are still accepted when no marked
+    checkpoint exists, so old runs remain resumable.
+    """
+    cks = sorted((run_dir / "checkpoints").glob("checkpoint-*"),
+                 key=lambda p: int(p.name.split("-")[-1]))
+    complete = [c for c in cks if (c / "COMPLETE").is_file()]
+    return complete or cks
+
+
 def save_checkpoint(run_dir: Path, step: int, model, optimizer, scheduler) -> Path:
     run_dir = Path(run_dir)
-    ckpt = run_dir / "checkpoints" / f"checkpoint-{step}"
-    model.save_pretrained(ckpt / "adapter")
-    save_training_state(ckpt / "training_state.pt", optimizer, scheduler, step)
+    ckdir = run_dir / "checkpoints"
+    ckdir.mkdir(parents=True, exist_ok=True)
+    ckpt = ckdir / f"checkpoint-{step}"
+    tmp = ckdir / f".tmp-checkpoint-{step}"
+    if tmp.exists():
+        shutil.rmtree(tmp)
+    model.save_pretrained(tmp / "adapter")
+    save_training_state(tmp / "training_state.pt", optimizer, scheduler, step)
+    (tmp / "COMPLETE").write_text(f"step={step}\n", encoding="utf-8")
+    if ckpt.exists():
+        shutil.rmtree(ckpt)
+    os.replace(tmp, ckpt)
     outbox = os.environ.get("AYANAMI_OUTBOX")
     if outbox:
-        import shutil
-        dest = Path(outbox) / run_dir.name / "checkpoints" / f"checkpoint-{step}"
+        dest = Path(outbox) / run_dir.name / "checkpoints" / ckpt.name
         dest.parent.mkdir(parents=True, exist_ok=True)
+        tmp_dest = dest.parent / f".tmp-{ckpt.name}"
+        if tmp_dest.exists():
+            shutil.rmtree(tmp_dest)
+        shutil.copytree(ckpt, tmp_dest)
         if dest.exists():
             shutil.rmtree(dest)
-        shutil.copytree(ckpt, dest)
+        os.replace(tmp_dest, dest)
         print(f"outbox sync: {ckpt} -> {dest}", flush=True)
     return ckpt
 
@@ -205,6 +263,7 @@ def train_text_sft(cfg: dict, run_dir: Path) -> dict[str, Any]:
         target_modules=list(lora_cfg["target_modules"]),
         task_type=TaskType.CAUSAL_LM))
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    _device_banner(device)
     model.to(device)
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"trainable LoRA params: {trainable:,} on {device}", flush=True)
@@ -264,12 +323,12 @@ def train_text_sft(cfg: dict, run_dir: Path) -> dict[str, Any]:
     resume = cfg.get("resume_from")
     if resume is None:
         # Friendly default: resume latest checkpoint when present.
-        auto = sorted((run_dir / "checkpoints").glob("checkpoint-*"), key=lambda p: int(p.name.split("-")[-1]))
+        auto = _checkpoint_dirs(run_dir)
         if auto:
             resume = auto[-1].name
             print(f"auto-resume from {resume}", flush=True)
     if resume:
-        ckpts = sorted((run_dir / "checkpoints").glob("checkpoint-*"), key=lambda p: int(p.name.split("-")[-1]))
+        ckpts = _checkpoint_dirs(run_dir)
         src = Path(resume) if Path(resume).is_absolute() else run_dir / "checkpoints" / resume
         if not ckpts and not src.exists():
             raise FileNotFoundError(f"nothing to resume from: {resume}")
@@ -292,6 +351,9 @@ def train_text_sft(cfg: dict, run_dir: Path) -> dict[str, Any]:
     if resume:
         start_step = load_training_state(src / "training_state.pt", opt, sched)
         _move_optimizer_to_model(opt, model)
+        # LR is a pure function of step; recompute it so hand-edited
+        # reconstructions (e.g. lr=0 saved at the cosine end) are safe.
+        opt.param_groups[0]["lr"] = float(lora_cfg["lr"]) * lr_lambda(start_step)
         start_epoch_pos = start_step * bs * accum
         print(f"resumed from {src} at step {start_step}", flush=True)
     _assert_optimizer_matches(model, opt)
@@ -339,12 +401,19 @@ def train_text_sft(cfg: dict, run_dir: Path) -> dict[str, Any]:
                         labels=batch["labels"])
             (out.loss / accum).backward()
             acc_loss += out.loss.item() / accum
-        torch.nn.utils.clip_grad_norm_(
-            [p for p in model.parameters() if p.requires_grad], 1.0)
+        before_ck = _trainable_weights_checksum(params)
+        gn = torch.nn.utils.clip_grad_norm_(params, 1.0)
+        if not torch.isfinite(gn):
+            raise RuntimeError(f"non-finite grad norm at step {step + 1}")
         opt.step()
+        if step == start_step and _trainable_weights_checksum(params) == before_ck:
+            raise RuntimeError(
+                "optimizer.step() did not change LoRA weights — silent no-op "
+                "(stale optimizer or frozen adapter)")
         sched.step()
         step += 1
         row = {"step": step, "loss": round(acc_loss, 4),
+               "grad_norm": round(float(gn), 4),
                "lr": round(opt.param_groups[0]["lr"], 8)}
         if step % eval_every == 0 or step == max_steps:
             ev = evaluate(model, tok, eval_items)
@@ -428,6 +497,7 @@ def train_logit_kd(cfg: dict, run_dir: Path) -> dict[str, Any]:
     (run_dir / "checkpoints").mkdir(parents=True, exist_ok=True)
     metrics_path = run_dir / "metrics.jsonl"
     device = "cuda" if torch.cuda.is_available() else "cpu"
+    _device_banner(device)
 
     tok = AutoTokenizer.from_pretrained(str(ROOT / cfg["model"]), local_files_only=True)
     if tok.pad_token_id is None:
@@ -490,12 +560,12 @@ def train_logit_kd(cfg: dict, run_dir: Path) -> dict[str, Any]:
     resume = cfg.get("resume_from")
     if resume is None:
         # Friendly default: resume latest checkpoint when present.
-        auto = sorted((run_dir / "checkpoints").glob("checkpoint-*"), key=lambda p: int(p.name.split("-")[-1]))
+        auto = _checkpoint_dirs(run_dir)
         if auto:
             resume = auto[-1].name
             print(f"auto-resume from {resume}", flush=True)
     if resume:
-        ckpts = sorted((run_dir / "checkpoints").glob("checkpoint-*"), key=lambda p: int(p.name.split("-")[-1]))
+        ckpts = _checkpoint_dirs(run_dir)
         src = Path(resume) if Path(resume).is_absolute() else run_dir / "checkpoints" / resume
         if not ckpts and not src.exists():
             raise FileNotFoundError(f"nothing to resume from: {resume}")
@@ -518,6 +588,7 @@ def train_logit_kd(cfg: dict, run_dir: Path) -> dict[str, Any]:
     if resume:
         start_step = load_training_state(src / "training_state.pt", opt, sched)
         _move_optimizer_to_model(opt, model)
+        opt.param_groups[0]["lr"] = float(lora_cfg["lr"]) * lr_lambda(start_step)
         start_pos = start_step * accum
         print(f"resumed from {src} at step {start_step}", flush=True)
     _assert_optimizer_matches(model, opt)
@@ -573,13 +644,20 @@ def train_logit_kd(cfg: dict, run_dir: Path) -> dict[str, Any]:
             t_ce += float(ce.detach()) / accum
             t_kd += float(kd.detach()) / accum
             t_loss += float(loss.detach()) / accum
-        torch.nn.utils.clip_grad_norm_(
-            [p for p in model.parameters() if p.requires_grad], 1.0)
+        before_ck = _trainable_weights_checksum(params)
+        gn = torch.nn.utils.clip_grad_norm_(params, 1.0)
+        if not torch.isfinite(gn):
+            raise RuntimeError(f"non-finite grad norm at step {step + 1}")
         opt.step()
+        if step == start_step and _trainable_weights_checksum(params) == before_ck:
+            raise RuntimeError(
+                "optimizer.step() did not change LoRA weights — silent no-op "
+                "(stale optimizer or frozen adapter)")
         sched.step()
         step += 1
         row = {"step": step, "loss": round(t_loss, 4), "ce": round(t_ce, 4),
-               "kd": round(t_kd, 4), "lr": round(opt.param_groups[0]["lr"], 8)}
+               "kd": round(t_kd, 4), "grad_norm": round(float(gn), 4),
+               "lr": round(opt.param_groups[0]["lr"], 8)}
         if step % eval_every == 0 or step == max_steps:
             ev = evaluate(model, tok, eval_items) if eval_items else {}
             row.update(ev)

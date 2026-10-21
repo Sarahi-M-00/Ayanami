@@ -41,7 +41,7 @@ persona/         identity_facts.yaml, system_prompt.md, eval/ (72 cases + baseli
 data/            raw/ processed/ teacher_cache/ (gitignored; built, not stored)
 src/ayanami_distill/  student/ teachers/ data/ losses/ train/ eval/ tools/ export/
 scripts/         audit, check_env, setup_remote.sh, smoke_*, merge_lora, export_smoke, vendor/
-tests/           fixtures + phase acceptance tests (39 green)
+tests/           fixtures + phase acceptance tests (85 green; see AGENTCONTEXT.md)
 runs/ exports/  gitignored artifacts (checkpoints, metrics, GGUFs)
 docs/            ENV_INVENTORY, STUDENT_AUDIT, DECISIONS, BASELINE0, RUNBOOK
 ```

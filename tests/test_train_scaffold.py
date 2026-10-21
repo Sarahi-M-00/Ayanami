@@ -41,7 +41,7 @@ def test_checkpoint_state_roundtrip(tmp_path):
     opt.step()
     sched.step()
     before = [p.detach().clone() for p in layer.parameters()]
-    save_training_state(tmp_path / "state.pt", opt, sched, 11)
+    save_training_state(tmp_path / "state.pt", opt, sched, 1)
     # Perturb, then restore.
     with torch.no_grad():
         for p in layer.parameters():
@@ -49,7 +49,7 @@ def test_checkpoint_state_roundtrip(tmp_path):
     opt2 = torch.optim.AdamW(layer.parameters(), lr=1e-3)
     sched2 = torch.optim.lr_scheduler.LambdaLR(opt2, lambda s: 0.5)
     step = load_training_state(tmp_path / "state.pt", opt2, sched2)
-    assert step == 11
+    assert step == 1
     assert list(opt2.state_dict()["state"].keys()) == list(opt.state_dict()["state"].keys())
     assert before  # params themselves live in the model/adapter checkpoint
 
@@ -186,6 +186,47 @@ def test_save_checkpoint_outbox_mirrors_local_layout(tmp_path, monkeypatch):
     dest = tmp_path / "outbox" / "phase10_logit_kd" / "checkpoints" / "checkpoint-50"
     assert ckpt == run_dir / "checkpoints" / "checkpoint-50"
     assert dest.is_dir() and (dest / "training_state.pt").is_file()
+    assert (ckpt / "COMPLETE").is_file() and (dest / "COMPLETE").is_file()
+    assert not list((run_dir / "checkpoints").glob(".tmp-*"))
+    assert not list(dest.parent.glob(".tmp-*"))
+
+
+def test_checkpoint_dirs_prefers_complete_and_skips_tmp(tmp_path):
+    from ayanami_distill.train.trainer import _checkpoint_dirs
+
+    ckdir = tmp_path / "run" / "checkpoints"
+    (ckdir / "checkpoint-10").mkdir(parents=True)
+    (ckdir / "checkpoint-20").mkdir()
+    (ckdir / "checkpoint-20" / "COMPLETE").write_text("step=20\n")
+    (ckdir / ".tmp-checkpoint-30").mkdir()
+    assert [c.name for c in _checkpoint_dirs(tmp_path / "run")] == ["checkpoint-20"]
+
+
+def test_load_training_state_rejects_step_mismatch(tmp_path):
+    import pytest
+    from ayanami_distill.train.trainer import load_training_state
+
+    layer = torch.nn.Linear(2, 2)
+    opt = torch.optim.AdamW(layer.parameters(), lr=1e-3)
+    sched = torch.optim.lr_scheduler.LambdaLR(opt, lambda s: 1.0)
+    for _ in range(2):
+        opt.zero_grad()
+        layer(torch.ones(1, 2)).sum().backward()
+        opt.step()
+        sched.step()
+    state = {"optimizer": opt.state_dict(), "scheduler": sched.state_dict(),
+             "step": 3, "torch_rng": torch.get_rng_state()}
+    path = tmp_path / "training_state.pt"
+    torch.save(state, path)
+    with pytest.raises(AssertionError, match="optimizer internal step"):
+        load_training_state(path, opt, sched)
+    state["step"] = 2
+    torch.save(state, path)
+    assert load_training_state(path, opt, sched) == 2
+    state["scheduler"]["last_epoch"] = 3
+    torch.save(state, path)
+    with pytest.raises(AssertionError, match="scheduler last_epoch"):
+        load_training_state(path, opt, sched)
 
 
 def test_resume_passes_is_trainable_true():
